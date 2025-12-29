@@ -2,6 +2,20 @@
 
 Simple PHP API for basic shared hosting (no Python app support needed).
 
+## Important: Database Migration
+
+If you already created the `conversation_events` table before, you need to add the `user_name` column:
+
+**Run this in phpMyAdmin:**
+```sql
+ALTER TABLE conversation_events
+ADD COLUMN user_name VARCHAR(100) NOT NULL DEFAULT 'unknown' AFTER event_data;
+
+ADD INDEX idx_user_name (user_name);
+```
+
+Or use the provided [migration_add_user_name.sql](migration_add_user_name.sql) file.
+
 ## Installation
 
 ### 1. Upload Files

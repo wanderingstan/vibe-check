@@ -130,13 +130,13 @@ if ($endpoint === 'events' && $request_method === 'POST') {
 
     // Insert event
     $stmt = $mysqli->prepare("
-        INSERT INTO conversation_events (file_name, line_number, event_data)
-        VALUES (?, ?, ?)
-        ON DUPLICATE KEY UPDATE event_data = VALUES(event_data)
+        INSERT INTO conversation_events (file_name, line_number, event_data, user_name)
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE event_data = VALUES(event_data), user_name = VALUES(user_name)
     ");
 
     $event_data_json = json_encode($input['event_data']);
-    $stmt->bind_param("sis", $input['file_name'], $input['line_number'], $event_data_json);
+    $stmt->bind_param("siss", $input['file_name'], $input['line_number'], $event_data_json, $user_name);
 
     if ($stmt->execute()) {
         http_response_code(201);
@@ -161,7 +161,7 @@ if ($endpoint === 'events' && $request_method === 'GET') {
     $limit = max(1, min($limit, 100)); // Between 1 and 100
 
     $stmt = $mysqli->prepare("
-        SELECT id, file_name, line_number, inserted_at
+        SELECT id, file_name, line_number, user_name, inserted_at
         FROM conversation_events
         ORDER BY inserted_at DESC
         LIMIT ?

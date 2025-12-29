@@ -77,8 +77,13 @@ SELECT file_name, COUNT(*) as event_count
 FROM conversation_events
 GROUP BY file_name;
 
+-- Count events per user
+SELECT user_name, COUNT(*) as event_count
+FROM conversation_events
+GROUP BY user_name;
+
 -- View recent events
-SELECT file_name, line_number, event_data, inserted_at
+SELECT file_name, line_number, user_name, inserted_at
 FROM conversation_events
 ORDER BY inserted_at DESC
 LIMIT 10;
