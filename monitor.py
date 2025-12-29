@@ -3,7 +3,7 @@
 Claude Code Conversation Monitor
 
 Monitors .jsonl files in the Claude Code conversations directory and
-inserts new events into a MySQL database.
+sends new events to the Vibe Check API server.
 """
 
 import json
@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Dict, Optional
 
-import pymysql
+import requests
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
@@ -58,29 +58,44 @@ class StateManager:
 class ConversationMonitor(FileSystemEventHandler):
     """Handles file system events for conversation files."""
 
-    def __init__(self, db_config: dict, state_manager: StateManager, base_dir: Path, debug_filter_project: Optional[str] = None):
-        self.db_config = db_config
+    def __init__(self, api_config: dict, state_manager: StateManager, base_dir: Path, debug_filter_project: Optional[str] = None):
+        self.api_url = api_config['url']
+        self.api_key = api_config['api_key']
         self.state_manager = state_manager
         self.base_dir = base_dir
         self.debug_filter_project = debug_filter_project
-        self.db_connection: Optional[pymysql.connections.Connection] = None
-        self.connect_db()
+        self.session = requests.Session()
+        self.session.headers.update({
+            'X-API-Key': self.api_key,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'User-Agent': 'VibeCheck-Monitor/1.0'
+        })
 
-    def connect_db(self):
-        """Establish database connection."""
+        # Auto-detect if we need /api.php in the URL
+        self.api_endpoint = self.api_url
+        self.test_connection()
+
+    def test_connection(self):
+        """Test API connection."""
         try:
-            self.db_connection = pymysql.connect(
-                host=self.db_config['host'],
-                port=self.db_config['port'],
-                user=self.db_config['user'],
-                password=self.db_config['password'],
-                database=self.db_config['database'],
-                charset='utf8mb4',
-                cursorclass=pymysql.cursors.DictCursor
-            )
-            print(f"Connected to MySQL database: {self.db_config['database']}")
-        except pymysql.Error as e:
-            print(f"Error connecting to MySQL: {e}")
+            # Try the configured URL first
+            response = self.session.get(f"{self.api_endpoint}/health")
+            response.raise_for_status()
+            print(f"Connected to API server: {self.api_endpoint}")
+        except requests.RequestException as e:
+            # If that fails and URL doesn't already have api.php, try adding it
+            if '/api.php' not in self.api_endpoint:
+                try:
+                    self.api_endpoint = f"{self.api_url}/api.php"
+                    response = self.session.get(f"{self.api_endpoint}/health")
+                    response.raise_for_status()
+                    print(f"Connected to API server: {self.api_endpoint}")
+                    return
+                except requests.RequestException:
+                    pass
+
+            print(f"Error connecting to API: {e}")
             sys.exit(1)
 
     def process_file(self, file_path: Path):
@@ -138,8 +153,8 @@ class ConversationMonitor(FileSystemEventHandler):
                     print(f"Warning: Invalid JSON at {filename}:{line_number}: {e}")
                     # Still update state to skip this line
                     self.state_manager.set_last_line(filename, line_number)
-                except pymysql.Error as e:
-                    print(f"Database error at {filename}:{line_number}: {e}")
+                except requests.RequestException as e:
+                    print(f"API error at {filename}:{line_number}: {e}")
                     # Don't update state so we retry later
                     break
 
@@ -147,18 +162,19 @@ class ConversationMonitor(FileSystemEventHandler):
             print(f"Error processing {file_path}: {e}")
 
     def insert_event(self, filename: str, line_number: int, event_data: dict):
-        """Insert an event into the database."""
+        """Insert an event via API."""
         try:
-            with self.db_connection.cursor() as cursor:
-                sql = """
-                    INSERT INTO conversation_events (file_name, line_number, event_data)
-                    VALUES (%s, %s, %s)
-                    ON DUPLICATE KEY UPDATE event_data = VALUES(event_data)
-                """
-                cursor.execute(sql, (filename, line_number, json.dumps(event_data)))
-            self.db_connection.commit()
+            response = self.session.post(
+                f"{self.api_endpoint}/events",
+                json={
+                    'file_name': filename,
+                    'line_number': line_number,
+                    'event_data': event_data
+                }
+            )
+            response.raise_for_status()
             print(f"  Inserted: {filename}:{line_number}")
-        except pymysql.Error as e:
+        except requests.RequestException as e:
             print(f"  Failed to insert {filename}:{line_number}: {e}")
             raise
 
@@ -196,7 +212,7 @@ def main():
     config_path = Path(__file__).parent / 'config.json'
     if not config_path.exists():
         print(f"Error: Configuration file not found: {config_path}")
-        print("Please create config.json with your MySQL credentials")
+        print("Please create config.json with your API configuration")
         sys.exit(1)
 
     with open(config_path, 'r') as f:
@@ -221,7 +237,7 @@ def main():
     state_manager = StateManager(state_file)
 
     # Initialize monitor
-    event_handler = ConversationMonitor(config['mysql'], state_manager, conversation_dir, debug_filter)
+    event_handler = ConversationMonitor(config['api'], state_manager, conversation_dir, debug_filter)
 
     # Process existing files first
     event_handler.process_existing_files(conversation_dir)

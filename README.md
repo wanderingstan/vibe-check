@@ -1,54 +1,49 @@
 # Claude Code Conversation Monitor
 
-Monitors Claude Code conversation files and stores events in MySQL for later analysis.
+Monitors Claude Code conversation files and sends events to the Vibe Check API server for storage.
+
+## Architecture
+
+- **Client (monitor.py)**: Watches local .jsonl files and sends events to API
+- **Server (server/)**: Flask API that authenticates requests and stores in MySQL
 
 ## Features
 
 - Real-time monitoring using watchdog (OS-level file events)
 - Incremental processing (only new lines, no reprocessing)
 - State persistence (resumes after restart)
-- Duplicate prevention (UNIQUE constraint on file+line)
+- API key authentication
 - JSON blob storage (flexible for future schema changes)
 
-## Setup
+## Client Setup
 
 ### 1. Install Dependencies
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Set Up MySQL Database
+### 2. Configure
 
-```bash
-mysql -u root -p < schema.sql
-```
-
-Or manually:
-```sql
-CREATE DATABASE claude_conversations;
--- Then run the contents of schema.sql
-```
-
-### 3. Configure
-
-Edit `config.json` with your MySQL credentials:
+Edit `config.json` with your API details:
 
 ```json
 {
-  "mysql": {
-    "host": "localhost",
-    "port": 3306,
-    "user": "your_username",
-    "password": "your_password",
-    "database": "claude_conversations"
+  "api": {
+    "url": "http://your-server.com:5000",
+    "api_key": "your-api-key-here"
   }
 }
 ```
 
-### 4. Run
+Get your API key from the server administrator.
+
+### 3. Run
 
 ```bash
+source venv/bin/activate
 python monitor.py
 ```
 
@@ -57,20 +52,24 @@ python monitor.py
 1. On startup, processes any new lines in existing .jsonl files
 2. Watches for file modifications/creations using OS events
 3. Parses each new JSONL line as JSON
-4. Inserts into MySQL with file name and line number
+4. Sends events to API server with authentication
 5. Tracks progress in `state.json` to resume after restarts
+
+## Server Setup
+
+See [server/README.md](server/README.md) for server installation and configuration.
 
 ## Files
 
-- `monitor.py` - Main monitoring script
-- `config.json` - Database credentials and settings
-- `schema.sql` - Database schema
+- `monitor.py` - Main monitoring client script
+- `config.json` - API credentials and settings
 - `state.json` - Auto-generated state tracking (last processed line per file)
 - `requirements.txt` - Python dependencies
+- `server/` - API server code (Flask app)
 
 ## Querying the Data
 
-Example queries:
+Connect to the MySQL server and run queries:
 
 ```sql
 -- Count events per file
@@ -90,9 +89,15 @@ FROM conversation_events
 WHERE JSON_EXTRACT(event_data, '$.type') = 'message';
 ```
 
+Or use the API:
+```bash
+curl -H "X-API-Key: your-api-key" http://your-server.com:5000/events?limit=10
+```
+
 ## Notes
 
-- Uses MySQL native JSON type for efficient storage
-- UNIQUE constraint prevents duplicate inserts
+- Client-server architecture for better security (no direct DB access from clients)
+- API key authentication for access control
 - State file ensures idempotency across restarts
 - Handles malformed JSON gracefully (logs and continues)
+- Server uses MySQL native JSON type for efficient storage

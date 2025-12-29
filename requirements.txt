@@ -1,2 +1,2 @@
 watchdog>=3.0.0
-pymysql>=1.1.0
+requests>=2.31.0

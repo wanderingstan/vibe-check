@@ -1,0 +1,133 @@
+# Vibe Check API - PHP Edition
+
+Simple PHP API for basic shared hosting (no Python app support needed).
+
+## Installation
+
+### 1. Upload Files
+
+Upload these files to your Hostgator account:
+```
+~/public_html/vibecheck/
+├── api.php
+├── config.json
+└── .htaccess
+```
+
+Or to a subdomain:
+```
+~/vibecheck.wanderingstan.com/
+├── api.php
+├── config.json
+└── .htaccess
+```
+
+### 2. Configure
+
+Edit `config.json` with your MySQL credentials:
+```json
+{
+  "mysql": {
+    "host": "localhost",
+    "user": "wanderin_vibecheck_admin",
+    "password": "your-password",
+    "database": "wanderin_vibecheck"
+  }
+}
+```
+
+### 3. Setup Database
+
+Run the schema in phpMyAdmin (from `server/schema.sql`):
+- Creates `conversation_events` table
+- Creates `api_keys` table
+
+### 4. Generate API Key
+
+Local machine:
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+In phpMyAdmin:
+```sql
+INSERT INTO api_keys (user_name, api_key)
+VALUES ('stan', 'your-generated-key-here');
+```
+
+## API Endpoints
+
+### GET /health
+Health check (no auth required)
+
+```bash
+curl https://wanderingstan.com/vibecheck/health
+```
+
+### POST /events
+Insert event (requires API key)
+
+```bash
+curl -X POST https://wanderingstan.com/vibecheck/events \
+  -H "X-API-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_name": "test.jsonl",
+    "line_number": 1,
+    "event_data": {"test": "data"}
+  }'
+```
+
+### GET /events?limit=10
+List recent events (requires API key)
+
+```bash
+curl -H "X-API-Key: your-api-key" \
+  https://wanderingstan.com/vibecheck/events?limit=5
+```
+
+## URL Structure
+
+With `.htaccess` enabled, you can use clean URLs:
+- `https://wanderingstan.com/vibecheck/health`
+- `https://wanderingstan.com/vibecheck/events`
+
+Without `.htaccess`:
+- `https://wanderingstan.com/vibecheck/api.php/health`
+- `https://wanderingstan.com/vibecheck/api.php/events`
+
+## Client Configuration
+
+Update your client `config.json`:
+```json
+{
+  "api": {
+    "url": "https://wanderingstan.com/vibecheck",
+    "api_key": "your-api-key-here"
+  }
+}
+```
+
+## Troubleshooting
+
+### 500 Internal Server Error
+- Check file permissions (644 for .php and .json, 755 for directories)
+- Check PHP error logs
+- Verify database credentials in config.json
+
+### 404 Not Found
+- Ensure .htaccess is uploaded
+- Verify mod_rewrite is enabled (usually is on Hostgator)
+- Try accessing directly: `/api.php/health`
+
+### Connection refused
+- Verify MySQL credentials
+- Check if MySQL hostname is `localhost` (try `127.0.0.1` if localhost fails)
+- Ensure remote MySQL access is enabled if needed
+
+## Security Notes
+
+- Keep `config.json` outside public_html if possible
+- Use HTTPS in production
+- Rotate API keys periodically
+- Monitor `api_keys.last_used_at` for suspicious activity
