@@ -85,6 +85,48 @@ while ($row = $result->fetch_assoc()) {
     $monthly_counts[$row['msg_month']] = (int)$row['msg_count'];
 }
 
+// Query 4: Get daily message counts per project
+// Extract project from file_name (first segment before slash, or whole filename)
+$project_daily_query = "
+    SELECT
+        DATE(JSON_UNQUOTE(JSON_EXTRACT(event_data, '$.timestamp'))) as msg_date,
+        SUBSTRING_INDEX(file_name, '/', 1) as project,
+        COUNT(*) as msg_count
+    FROM conversation_events
+    WHERE JSON_EXTRACT(event_data, '$.type') = 'user'
+        AND JSON_EXTRACT(event_data, '$.timestamp') IS NOT NULL
+    GROUP BY msg_date, project
+    ORDER BY msg_date ASC, project ASC
+";
+
+$result = $mysqli->query($project_daily_query);
+$project_data = [];
+$all_projects = [];
+$all_dates = array_keys($daily_counts); // Reuse dates from overall daily counts
+
+while ($row = $result->fetch_assoc()) {
+    $date = $row['msg_date'];
+    $project = $row['project'];
+    $count = (int)$row['msg_count'];
+
+    if (!isset($project_data[$project])) {
+        $project_data[$project] = [];
+        $all_projects[] = $project;
+    }
+
+    $project_data[$project][$date] = $count;
+}
+
+// Fill in missing dates with 0 for each project
+foreach ($project_data as $project => &$dates) {
+    foreach ($all_dates as $date) {
+        if (!isset($dates[$date])) {
+            $dates[$date] = 0;
+        }
+    }
+    ksort($dates); // Sort by date
+}
+
 $mysqli->close();
 
 // Calculate averages
@@ -241,6 +283,11 @@ $chart_data = json_encode(array_values($daily_counts));
             <canvas id="volumeChart"></canvas>
         </div>
 
+        <div class="chart-container">
+            <h2 class="chart-title">Message Volume by Project</h2>
+            <canvas id="projectChart"></canvas>
+        </div>
+
         <div class="footer">
             Last updated: <?php echo date('Y-m-d H:i:s'); ?>
         </div>
@@ -285,6 +332,108 @@ $chart_data = json_encode(array_values($daily_counts));
                         borderWidth: 1,
                         padding: 12,
                         displayColors: false
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            color: '#30363d',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#8b949e',
+                            maxRotation: 45,
+                            minRotation: 45
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: '#30363d',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#8b949e',
+                            precision: 0
+                        }
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+
+        // Project Chart - Multiple lines for different projects
+        const projectCtx = document.getElementById('projectChart').getContext('2d');
+
+        // Color palette for different projects
+        const colors = [
+            '#6366f1', '#a855f7', '#ec4899', '#f59e0b', '#10b981',
+            '#06b6d4', '#8b5cf6', '#f97316', '#14b8a6', '#84cc16'
+        ];
+
+        // Build datasets for each project
+        const projectDatasets = [
+            <?php
+            $color_index = 0;
+            foreach ($project_data as $project => $dates) {
+                $color = $color_index % 10; // Cycle through colors
+                $data_values = json_encode(array_values($dates));
+                echo "{
+                    label: " . json_encode($project) . ",
+                    data: $data_values,
+                    borderColor: colors[$color],
+                    backgroundColor: 'transparent',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    pointBackgroundColor: colors[$color],
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 1
+                }";
+                if ($color_index < count($project_data) - 1) {
+                    echo ",\n                ";
+                }
+                $color_index++;
+            }
+            ?>
+        ];
+
+        new Chart(projectCtx, {
+            type: 'line',
+            data: {
+                labels: <?php echo $chart_labels; ?>,
+                datasets: projectDatasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: '#e6edf3',
+                            padding: 12,
+                            font: {
+                                size: 11
+                            },
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(22, 27, 34, 0.95)',
+                        titleColor: '#e6edf3',
+                        bodyColor: '#8b949e',
+                        borderColor: '#30363d',
+                        borderWidth: 1,
+                        padding: 12
                     }
                 },
                 scales: {
