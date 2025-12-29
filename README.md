@@ -5,7 +5,7 @@ Monitors Claude Code conversation files and sends events to the Vibe Check API s
 ## Architecture
 
 - **Client (monitor.py)**: Watches local .jsonl files and sends events to API
-- **Server (server/)**: Flask API that authenticates requests and stores in MySQL
+- **Server (server-php/)**: PHP API that authenticates requests and stores in MySQL
 
 ## Features
 
@@ -32,7 +32,7 @@ Edit `config.json` with your API details:
 ```json
 {
   "api": {
-    "url": "http://your-server.com:5000",
+    "url": "https://vibecheck.wanderingstan.com",
     "api_key": "your-api-key-here"
   }
 }
@@ -57,7 +57,7 @@ python monitor.py
 
 ## Server Setup
 
-See [server/README.md](server/README.md) for server installation and configuration.
+See [server-php/README.md](server-php/README.md) for server installation and configuration.
 
 ## Files
 
@@ -65,7 +65,7 @@ See [server/README.md](server/README.md) for server installation and configurati
 - `config.json` - API credentials and settings
 - `state.json` - Auto-generated state tracking (last processed line per file)
 - `requirements.txt` - Python dependencies
-- `server/` - API server code (Flask app)
+- `server-php/` - API server code (PHP)
 
 ## Querying the Data
 
@@ -95,8 +95,9 @@ WHERE JSON_EXTRACT(event_data, '$.type') = 'message';
 ```
 
 Or use the API:
+
 ```bash
-curl -H "X-API-Key: your-api-key" http://your-server.com:5000/events?limit=10
+curl -H "X-API-Key: your-api-key" https://vibecheck.wanderingstan.com/events?limit=10
 ```
 
 ## Notes
