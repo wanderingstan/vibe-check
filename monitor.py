@@ -6,6 +6,7 @@ Monitors .jsonl files in the Claude Code conversations directory and
 sends new events to the Vibe Check API server.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -53,6 +54,39 @@ class StateManager:
         """Set the last processed line number for a file."""
         self.state[filename] = line_number
         self.save()
+
+    def skip_to_end(self, directory: Path, debug_filter_project: Optional[str] = None):
+        """Fast-forward state to the end of all existing files without processing."""
+        print("\nSkipping backlog - fast-forwarding to current position...")
+        count = 0
+        for file_path in directory.glob('**/*.jsonl'):
+            if not file_path.exists():
+                continue
+
+            try:
+                # Get relative path for consistent naming
+                relative_path = file_path.relative_to(directory)
+                filename = str(relative_path)
+            except ValueError:
+                filename = file_path.name
+
+            # Apply debug filter if configured
+            if debug_filter_project and not filename.startswith(debug_filter_project):
+                continue
+
+            # Count lines in file
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    line_count = sum(1 for _ in f)
+
+                if line_count > 0:
+                    self.set_last_line(filename, line_count)
+                    print(f"  Skipped {line_count} lines in {filename}")
+                    count += 1
+            except Exception as e:
+                print(f"  Error reading {filename}: {e}")
+
+        print(f"Fast-forwarded {count} file(s). Monitoring will start from current position.\n")
 
 
 class ConversationMonitor(FileSystemEventHandler):
@@ -208,6 +242,17 @@ class ConversationMonitor(FileSystemEventHandler):
 
 def main():
     """Main entry point."""
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description='Monitor Claude Code conversation files and send events to Vibe Check API'
+    )
+    parser.add_argument(
+        '--skip-backlog',
+        action='store_true',
+        help='Skip existing conversation history and start monitoring from current position'
+    )
+    args = parser.parse_args()
+
     # Load configuration
     config_path = Path(__file__).parent / 'config.json'
     if not config_path.exists():
@@ -236,11 +281,16 @@ def main():
     state_file = Path(__file__).parent / config['monitor']['state_file']
     state_manager = StateManager(state_file)
 
+    # Handle skip-backlog flag
+    if args.skip_backlog:
+        state_manager.skip_to_end(conversation_dir, debug_filter)
+
     # Initialize monitor
     event_handler = ConversationMonitor(config['api'], state_manager, conversation_dir, debug_filter)
 
-    # Process existing files first
-    event_handler.process_existing_files(conversation_dir)
+    # Process existing files first (unless we just skipped backlog)
+    if not args.skip_backlog:
+        event_handler.process_existing_files(conversation_dir)
 
     # Start watching for changes
     observer = Observer()

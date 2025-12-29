@@ -27,18 +27,32 @@ pip install -r requirements.txt
 
 ### 2. Configure
 
-Edit `config.json` with your API details:
+Edit `config.json` with your API details and monitoring settings:
 
 ```json
 {
   "api": {
     "url": "https://vibecheck.wanderingstan.com",
     "api_key": "your-api-key-here"
+  },
+  "monitor": {
+    "conversation_dir": "~/.claude/projects",
+    "state_file": "state.json",
+    "debug_filter_project": "-Users-yourname-Developer-vibe-check"
   }
 }
 ```
 
-Get your API key from the server administrator.
+**API Settings:**
+
+- `url` - The server endpoint URL
+- `api_key` - Your API key (get from server administrator)
+
+**Monitor Settings:**
+
+- `conversation_dir` - Directory to watch for Claude Code conversation files (default: `~/.claude/projects`)
+- `state_file` - File to store processing state (default: `state.json`)
+- `debug_filter_project` - (Optional) Project path to montior exclusively, useful when testing.
 
 ### 3. Run
 
@@ -46,6 +60,16 @@ Get your API key from the server administrator.
 source venv/bin/activate
 python monitor.py
 ```
+
+**Skip Backlog (First Run):**
+
+If you don't want to upload existing conversation history, use the `--skip-backlog` flag on first run:
+
+```bash
+python monitor.py --skip-backlog
+```
+
+This will fast-forward the state to the latest line in all conversation files without uploading them. Future runs will only monitor new conversations from that point forward.
 
 ## How It Works
 
