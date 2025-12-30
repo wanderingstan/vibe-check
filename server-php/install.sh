@@ -186,6 +186,9 @@ EOF
 
 chmod +x "$INSTALL_DIR/start.sh"
 
+# Make uninstall.sh easily accessible
+chmod +x "$INSTALL_DIR/uninstall.sh"
+
 # Installation complete
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
