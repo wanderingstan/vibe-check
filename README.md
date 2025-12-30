@@ -1,19 +1,6 @@
-# Claude Code Conversation Monitor
+# Vibe-Check Claude Code Conversation Monitor
 
 Monitors Claude Code conversation files and sends events to the Vibe Check API server for storage.
-
-## Architecture
-
-- **Client (monitor.py)**: Watches local .jsonl files and sends events to API
-- **Server (server-php/)**: PHP API that authenticates requests and stores in MySQL
-
-## Features
-
-- Real-time monitoring using watchdog (OS-level file events)
-- Incremental processing (only new lines, no reprocessing)
-- State persistence (resumes after restart)
-- API key authentication
-- JSON blob storage (flexible for future schema changes)
 
 ## Quick Install
 
@@ -24,6 +11,7 @@ curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
 ```
 
 This will:
+
 - Install Vibe Check to `~/.vibe-check`
 - Create your user account and API key
 - Set up the configuration
@@ -48,6 +36,19 @@ To uninstall Vibe Check:
 ```
 
 This will remove the installation directory and stop any running monitor processes. Your server account will remain active.
+
+## Architecture
+
+- **Client (monitor.py)**: Watches local .jsonl files and sends events to API
+- **Server (server-php/)**: PHP API that authenticates requests and stores in MySQL
+
+## Features
+
+- Real-time monitoring using watchdog (OS-level file events)
+- Incremental processing (only new lines, no reprocessing)
+- State persistence (resumes after restart)
+- API key authentication
+- JSON blob storage (flexible for future schema changes)
 
 ## Manual Client Setup
 
