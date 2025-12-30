@@ -26,6 +26,29 @@ if ($mysqli->connect_error) {
 
 $mysqli->set_charset('utf8mb4');
 
+// Get username filter from query parameter
+$filter_username = isset($_GET['user']) ? trim($_GET['user']) : null;
+
+// Build WHERE clause for username filtering
+$where_user_filter = "";
+if ($filter_username) {
+    $escaped_username = $mysqli->real_escape_string($filter_username);
+    $where_user_filter = " AND user_name = '$escaped_username'";
+}
+
+// Query 0: Get all unique usernames for the user list
+$users_query = "
+    SELECT DISTINCT user_name
+    FROM conversation_events
+    WHERE user_name IS NOT NULL AND user_name != ''
+    ORDER BY user_name ASC
+";
+$result = $mysqli->query($users_query);
+$all_users = [];
+while ($row = $result->fetch_assoc()) {
+    $all_users[] = $row['user_name'];
+}
+
 // Query 1: Get total prompts and average character length
 // Filter for user messages directly in MySQL using JSON functions
 $stats_query = "
@@ -41,6 +64,7 @@ $stats_query = "
         ) as avg_chars
     FROM conversation_events
     WHERE JSON_EXTRACT(event_data, '$.type') = 'user'
+    $where_user_filter
 ";
 
 $result = $mysqli->query($stats_query);
@@ -57,6 +81,7 @@ $daily_query = "
     FROM conversation_events
     WHERE JSON_EXTRACT(event_data, '$.type') = 'user'
         AND JSON_EXTRACT(event_data, '$.timestamp') IS NOT NULL
+        $where_user_filter
     GROUP BY msg_date
     ORDER BY msg_date ASC
 ";
@@ -75,6 +100,7 @@ $monthly_query = "
     FROM conversation_events
     WHERE JSON_EXTRACT(event_data, '$.type') = 'user'
         AND JSON_EXTRACT(event_data, '$.timestamp') IS NOT NULL
+        $where_user_filter
     GROUP BY msg_month
     ORDER BY msg_month ASC
 ";
@@ -95,6 +121,7 @@ $project_daily_query = "
     FROM conversation_events
     WHERE JSON_EXTRACT(event_data, '$.type') = 'user'
         AND JSON_EXTRACT(event_data, '$.timestamp') IS NOT NULL
+        $where_user_filter
     GROUP BY msg_date, project
     ORDER BY msg_date ASC, project ASC
 ";
@@ -249,12 +276,93 @@ $chart_data = json_encode(array_values($daily_counts));
             padding-top: 2rem;
             border-top: 1px solid #30363d;
         }
+
+        .user-filter {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .user-filter-title {
+            font-size: 0.875rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1rem;
+        }
+
+        .user-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .user-tag {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #8b949e;
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+        }
+
+        .user-tag:hover {
+            background: #30363d;
+            color: #e6edf3;
+            border-color: #6366f1;
+            transform: translateY(-1px);
+        }
+
+        .user-tag.active {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            border-color: #6366f1;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .user-tag.all {
+            background: #30363d;
+            color: #e6edf3;
+        }
+
+        .user-tag.all.active {
+            background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+            border-color: #10b981;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Vibe Check Stats</h1>
-        <p class="subtitle">Conversation analytics dashboard</p>
+        <p class="subtitle">
+            <?php
+            if ($filter_username) {
+                echo "Stats for <strong>@" . htmlspecialchars($filter_username) . "</strong>";
+            } else {
+                echo "Global conversation analytics";
+            }
+            ?>
+        </p>
+
+        <div class="user-filter">
+            <div class="user-filter-title">Filter by User</div>
+            <div class="user-list">
+                <a href="stats.php" class="user-tag all <?php echo !$filter_username ? 'active' : ''; ?>">
+                    All Users
+                </a>
+                <?php foreach ($all_users as $user): ?>
+                    <a href="stats.php?user=<?php echo urlencode($user); ?>"
+                       class="user-tag <?php echo ($filter_username === $user) ? 'active' : ''; ?>">
+                        @<?php echo htmlspecialchars($user); ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+        </div>
 
         <div class="stats-grid">
             <div class="stat-card">

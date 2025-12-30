@@ -57,8 +57,8 @@ if [ -d "$INSTALL_DIR" ]; then
     echo -e "${BLUE}To start monitoring:${NC}"
     echo -e "  $INSTALL_DIR/start.sh"
     echo ""
-    echo -e "${BLUE}View stats at:${NC}"
-    echo -e "  ${BLUE}https://vibecheck.wanderingstan.com/stats.php${NC}"
+    echo -e "${BLUE}View your stats at:${NC}"
+    echo -e "  ${BLUE}https://vibecheck.wanderingstan.com/stats.php?user=$USERNAME${NC}"
     echo ""
 
     # Ask if user wants to start now
@@ -206,8 +206,8 @@ echo ""
 echo -e "${BLUE}To run in the background:${NC}"
 echo -e "  nohup $INSTALL_DIR/start.sh $SKIP_BACKLOG > $INSTALL_DIR/monitor.log 2>&1 &"
 echo ""
-echo -e "${BLUE}View stats at:${NC}"
-echo -e "  ${BLUE}https://vibecheck.wanderingstan.com/stats.php${NC}"
+echo -e "${BLUE}View your stats at:${NC}"
+echo -e "  ${BLUE}https://vibecheck.wanderingstan.com/stats.php?user=$USERNAME${NC}"
 echo ""
 
 # Ask if user wants to start now
