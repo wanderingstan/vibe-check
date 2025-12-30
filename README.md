@@ -15,7 +15,43 @@ Monitors Claude Code conversation files and sends events to the Vibe Check API s
 - API key authentication
 - JSON blob storage (flexible for future schema changes)
 
-## Client Setup
+## Quick Install
+
+The easiest way to get started:
+
+```bash
+curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
+```
+
+This will:
+- Install Vibe Check to `~/.vibe-check`
+- Create your user account and API key
+- Set up the configuration
+- Start monitoring your Claude Code conversations
+
+## Updating
+
+To update to the latest version, simply run the install command again:
+
+```bash
+curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
+```
+
+This will update the code and dependencies while preserving your configuration.
+
+## Uninstalling
+
+To uninstall Vibe Check:
+
+```bash
+~/.vibe-check/uninstall.sh
+```
+
+This will remove the installation directory and stop any running monitor processes. Your server account will remain active.
+
+## Manual Client Setup
+
+If you prefer to install manually:
 
 ### 1. Install Dependencies
 

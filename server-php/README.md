@@ -146,7 +146,24 @@ Without `.htaccess`:
 - `https://wanderingstan.com/vibecheck/api.php/health`
 - `https://wanderingstan.com/vibecheck/api.php/events`
 
-## Client Configuration
+## Client Installation
+
+### Quick Install (Recommended)
+
+Users can install the Vibe Check client with a single command:
+
+```bash
+curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
+```
+
+This automated installer will:
+1. Clone the repository to `~/.vibe-check`
+2. Set up Python virtual environment
+3. Ask for a username and automatically register it via the `/create-token` API
+4. Create `config.json` with the generated API key
+5. Optionally start monitoring immediately
+
+### Manual Configuration
 
 Update your client `config.json`:
 ```json
