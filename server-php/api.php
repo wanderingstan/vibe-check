@@ -93,6 +93,73 @@ if ($endpoint === 'health' && $request_method === 'GET') {
     exit;
 }
 
+// POST /create-token - Create new user and API token (no auth required)
+if ($endpoint === 'create-token' && $request_method === 'POST') {
+    $mysqli = get_db_connection($config);
+    $input = json_decode(file_get_contents('php://input'), true);
+
+    if (!$input || !isset($input['username'])) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing required field: username']);
+        exit;
+    }
+
+    $username = trim($input['username']);
+
+    // Validate username
+    if (empty($username)) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Username cannot be empty']);
+        exit;
+    }
+
+    if (strlen($username) > 100) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Username too long (max 100 characters)']);
+        exit;
+    }
+
+    // Check if username already exists
+    $stmt = $mysqli->prepare("SELECT user_name FROM api_keys WHERE user_name = ?");
+    $stmt->bind_param("s", $username);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($result->num_rows > 0) {
+        http_response_code(409);
+        echo json_encode(['error' => 'Username already exists']);
+        $stmt->close();
+        $mysqli->close();
+        exit;
+    }
+    $stmt->close();
+
+    // Generate secure API key (32 bytes = 43 characters in base64url)
+    $api_key = rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+
+    // Insert new user and API key
+    $stmt = $mysqli->prepare("INSERT INTO api_keys (user_name, api_key) VALUES (?, ?)");
+    $stmt->bind_param("ss", $username, $api_key);
+
+    if ($stmt->execute()) {
+        http_response_code(201);
+        echo json_encode([
+            'status' => 'ok',
+            'username' => $username,
+            'api_key' => $api_key,
+            'message' => 'API token created successfully'
+        ]);
+    } else {
+        error_log("Database error: " . $stmt->error);
+        http_response_code(500);
+        echo json_encode(['error' => 'Failed to create API token']);
+    }
+
+    $stmt->close();
+    $mysqli->close();
+    exit;
+}
+
 // All other endpoints require authentication
 $mysqli = get_db_connection($config);
 $user_name = validate_api_key($mysqli, $api_key);

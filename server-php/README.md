@@ -58,12 +58,23 @@ Run the schema in phpMyAdmin (from `server/schema.sql`):
 
 ### 4. Generate API Key
 
-Local machine:
+**Option A: Use the API endpoint (Recommended)**
+```bash
+curl -X POST https://wanderingstan.com/vibecheck/create-token \
+  -H "Content-Type: application/json" \
+  -d '{"username": "your-username"}'
+```
+
+This will return your API key. Save it securely!
+
+**Option B: Manual creation via phpMyAdmin**
+
+Generate a key locally:
 ```bash
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-In phpMyAdmin:
+Insert in phpMyAdmin:
 ```sql
 INSERT INTO api_keys (user_name, api_key)
 VALUES ('stan', 'your-generated-key-here');
@@ -77,6 +88,31 @@ Health check (no auth required)
 ```bash
 curl https://wanderingstan.com/vibecheck/health
 ```
+
+### POST /create-token
+Create a new user and API token (no auth required)
+
+**Request:**
+```bash
+curl -X POST https://wanderingstan.com/vibecheck/create-token \
+  -H "Content-Type: application/json" \
+  -d '{"username": "your-username"}'
+```
+
+**Success Response (201):**
+```json
+{
+  "status": "ok",
+  "username": "your-username",
+  "api_key": "SecureRandomGeneratedKey...",
+  "message": "API token created successfully"
+}
+```
+
+**Error Responses:**
+- `400` - Missing/empty username or too long (max 100 chars)
+- `409` - Username already exists
+- `500` - Database error
 
 ### POST /events
 Insert event (requires API key)
