@@ -10,10 +10,20 @@ CREATE TABLE IF NOT EXISTS conversation_events (
     event_data JSON NOT NULL,
     user_name VARCHAR(100) NOT NULL,
     inserted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- Generated columns for efficient querying
+    has_message BOOLEAN GENERATED ALWAYS AS
+        (JSON_CONTAINS_PATH(event_data, 'one', '$.message')) STORED,
+    event_type VARCHAR(50) GENERATED ALWAYS AS
+        (JSON_UNQUOTE(JSON_EXTRACT(event_data, '$.type'))) STORED,
+    session_id VARCHAR(100) GENERATED ALWAYS AS
+        (JSON_UNQUOTE(JSON_EXTRACT(event_data, '$.sessionId'))) STORED,
     UNIQUE KEY unique_event (file_name, line_number),
     INDEX idx_file_name (file_name),
     INDEX idx_user_name (user_name),
-    INDEX idx_inserted_at (inserted_at)
+    INDEX idx_inserted_at (inserted_at),
+    INDEX idx_has_message (has_message),
+    INDEX idx_event_type (event_type),
+    INDEX idx_session_id (session_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- API Keys table for authentication
