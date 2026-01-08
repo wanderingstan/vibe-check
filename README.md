@@ -108,6 +108,54 @@ python monitor.py --skip-backlog
 
 This will fast-forward the state to the latest line in all conversation files without uploading them. Future runs will only monitor new conversations from that point forward.
 
+## Keeping the Monitor Running
+
+To ensure the monitor stays running continuously, you can use the included monitoring scripts:
+
+### Management Script
+
+The `manage_monitor.sh` script provides easy control over the monitor process:
+
+```bash
+./manage_monitor.sh start         # Start the monitor
+./manage_monitor.sh stop          # Stop the monitor
+./manage_monitor.sh restart       # Restart the monitor
+./manage_monitor.sh status        # Check if monitor is running
+./manage_monitor.sh logs          # View recent logs
+./manage_monitor.sh install-cron  # Install automatic checking (every 15 min)
+./manage_monitor.sh uninstall-cron # Remove automatic checking
+```
+
+### Automatic Monitoring with Cron
+
+To have the system automatically restart the monitor if it stops:
+
+1. Install the cron job:
+```bash
+./manage_monitor.sh install-cron
+```
+
+This will check every 15 minutes if the monitor is running and restart it if needed.
+
+### How It Works
+
+- **Process tracking**: Uses a PID file (`.monitor.pid`) to track the running process
+- **Automatic restart**: Cron job checks every 15 minutes and restarts if the process has stopped
+- **Logging**: Activity is logged to `~/logs/vibe_check_monitor.log`
+- **Notifications**: Shows a macOS notification when the monitor is restarted
+- **Monitor output**: The monitor's own output is saved to `monitor.log`
+
+### Viewing Logs
+
+```bash
+# View both monitoring logs and monitor output
+./manage_monitor.sh logs
+
+# Or view individually
+tail -f ~/logs/vibe_check_monitor.log  # Monitoring activity
+tail -f monitor.log                     # Monitor process output
+```
+
 ## How It Works
 
 1. On startup, processes any new lines in existing .jsonl files
@@ -123,10 +171,14 @@ See [server-php/README.md](server-php/README.md) for server installation and con
 ## Files
 
 - `monitor.py` - Main monitoring client script
+- `manage_monitor.sh` - Management script for starting/stopping monitor and installing cron job
 - `config.json` - API credentials and settings
 - `state.json` - Auto-generated state tracking (last processed line per file)
+- `.monitor.pid` - Auto-generated PID file (tracks running monitor process)
+- `monitor.log` - Auto-generated output log from monitor process
 - `requirements.txt` - Python dependencies
 - `server-php/` - API server code (PHP)
+- `~/Scripts/monitor_vibe_check.sh` - Cron script that checks if monitor is running
 
 ## Querying the Data
 
