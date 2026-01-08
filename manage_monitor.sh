@@ -5,6 +5,7 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PID_FILE="$SCRIPT_DIR/.monitor.pid"
 MONITOR_SCRIPT="$HOME/Scripts/monitor_vibe_check.sh"
+VENV_PYTHON="$SCRIPT_DIR/venv/bin/python3"
 
 case "$1" in
     start)
