@@ -18,6 +18,8 @@ import requests
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
+import sqlite3
+
 
 class StateManager:
     """Manages state tracking for file processing."""
@@ -89,14 +91,109 @@ class StateManager:
         print(f"Fast-forwarded {count} file(s). Monitoring will start from current position.\n")
 
 
+class SQLiteManager:
+    """Manages SQLite database connections and operations."""
+
+    def __init__(self, config: dict):
+        """Initialize SQLite manager with configuration."""
+        self.config = config
+        self.enabled = config.get('enabled', False)
+        self.connection = None
+        self.cursor = None
+        self.db_path = None
+
+        if not self.enabled:
+            print("SQLite recording is disabled")
+            return
+
+        try:
+            # Expand path and create database
+            self.db_path = Path(config['database_path']).expanduser()
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+
+            self.connect()
+            self.create_schema()
+            print(f"Connected to SQLite database: {self.db_path}")
+        except Exception as e:
+            print(f"Error initializing SQLite: {e}")
+            print("SQLite recording will be disabled. Events will still be sent to API.")
+            self.enabled = False
+
+    def connect(self):
+        """Establish SQLite connection."""
+        self.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self.cursor = self.connection.cursor()
+
+    def create_schema(self):
+        """Create database schema if it doesn't exist."""
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                line_number INTEGER NOT NULL,
+                event_data TEXT NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(file_name, line_number)
+            )
+        """)
+
+        # Create indexes
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_file_name ON events(file_name)
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp)
+        """)
+
+        self.connection.commit()
+
+    def insert_event(self, filename: str, line_number: int, event_data: dict) -> bool:
+        """Insert an event into the SQLite database."""
+        if not self.enabled:
+            return False
+
+        try:
+            # Convert event_data to JSON string
+            event_json = json.dumps(event_data)
+
+            # Insert or ignore duplicates
+            query = """
+                INSERT OR IGNORE INTO events (file_name, line_number, event_data)
+                VALUES (?, ?, ?)
+            """
+            self.cursor.execute(query, (filename, line_number, event_json))
+            self.connection.commit()
+
+            return True
+
+        except sqlite3.Error as e:
+            print(f"SQLite error: {e}")
+            return False
+
+    def close(self):
+        """Close SQLite connection."""
+        if self.cursor:
+            self.cursor.close()
+        if self.connection:
+            self.connection.close()
+
+    def __del__(self):
+        """Cleanup on deletion."""
+        try:
+            self.close()
+        except:
+            pass
+
+
 class ConversationMonitor(FileSystemEventHandler):
     """Handles file system events for conversation files."""
 
-    def __init__(self, api_config: dict, state_manager: StateManager, base_dir: Path, debug_filter_project: Optional[str] = None):
+    def __init__(self, api_config: dict, state_manager: StateManager, base_dir: Path, sqlite_manager: Optional[SQLiteManager] = None, debug_filter_project: Optional[str] = None):
         self.api_url = api_config['url']
         self.api_key = api_config['api_key']
         self.state_manager = state_manager
         self.base_dir = base_dir
+        self.sqlite_manager = sqlite_manager
         self.debug_filter_project = debug_filter_project
         self.session = requests.Session()
         self.session.headers.update({
@@ -196,7 +293,11 @@ class ConversationMonitor(FileSystemEventHandler):
             print(f"Error processing {file_path}: {e}")
 
     def insert_event(self, filename: str, line_number: int, event_data: dict):
-        """Insert an event via API."""
+        """Insert an event via API and SQLite (if enabled)."""
+        api_success = False
+        sqlite_success = False
+
+        # Try API first
         try:
             response = self.session.post(
                 f"{self.api_endpoint}/events",
@@ -207,10 +308,26 @@ class ConversationMonitor(FileSystemEventHandler):
                 }
             )
             response.raise_for_status()
-            print(f"  Inserted: {filename}:{line_number}")
+            api_success = True
         except requests.RequestException as e:
-            print(f"  Failed to insert {filename}:{line_number}: {e}")
-            raise
+            print(f"  API error {filename}:{line_number}: {e}")
+
+        # Try SQLite if enabled
+        if self.sqlite_manager and self.sqlite_manager.enabled:
+            sqlite_success = self.sqlite_manager.insert_event(filename, line_number, event_data)
+
+        # Report success
+        if api_success or sqlite_success:
+            status = []
+            if api_success:
+                status.append("API")
+            if sqlite_success:
+                status.append("SQLite")
+            print(f"  Inserted: {filename}:{line_number} → {', '.join(status)}")
+
+        # Only raise error if both failed
+        if not api_success and not sqlite_success:
+            raise requests.RequestException("Both API and SQLite insertion failed")
 
     def on_modified(self, event):
         """Handle file modification events."""
@@ -285,8 +402,13 @@ def main():
     if args.skip_backlog:
         state_manager.skip_to_end(conversation_dir, debug_filter)
 
+    # Initialize SQLite manager
+    sqlite_manager = None
+    if 'sqlite' in config:
+        sqlite_manager = SQLiteManager(config['sqlite'])
+
     # Initialize monitor
-    event_handler = ConversationMonitor(config['api'], state_manager, conversation_dir, debug_filter)
+    event_handler = ConversationMonitor(config['api'], state_manager, conversation_dir, sqlite_manager, debug_filter)
 
     # Process existing files first (unless we just skipped backlog)
     if not args.skip_backlog:
