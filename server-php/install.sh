@@ -25,7 +25,7 @@ handle_error() {
     # Check if Claude Code CLI is available
     if command -v claude &> /dev/null; then
         echo ""
-        echo -e "${BLUE}🤖 Launching Claude Code to diagnose the issue...${NC}"
+        echo -e "${BLUE}🧜 Launching Claude Code to diagnose the issue...${NC}"
         echo ""
 
         # Find the README.md (might be in the repo if cloned, or fetch from GitHub)
@@ -176,7 +176,7 @@ API_URL="https://vibecheck.wanderingstan.com"
 
 echo -e "${BLUE}"
 echo "╔═══════════════════════════════════════╗"
-echo "║     Vibe Check Installer v1.0         ║"
+echo "║   🧜 Vibe Check Installer v1.0        ║"
 echo "╚═══════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -239,7 +239,7 @@ if [ -d "$INSTALL_DIR" ]; then
 
         echo ""
         echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║   Update Complete! 🎉                 ║${NC}"
+        echo -e "${GREEN}║   🧜 Update Complete! 🎉              ║${NC}"
         echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
         echo ""
         echo -e "${BLUE}To start monitoring:${NC}"
@@ -255,7 +255,7 @@ if [ -d "$INSTALL_DIR" ]; then
         read -p "Do you want to start monitoring now? (Y/n): " -n 1 -r </dev/tty
         echo
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            echo -e "${GREEN}Starting monitor...${NC}"
+            echo -e "${GREEN}🧜 Starting monitor...${NC}"
             echo ""
             # Clean up log file on success before exec
             rm -f "$INSTALL_LOG"
@@ -412,7 +412,7 @@ fi
 # Installation complete
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   Installation Complete! 🎉           ║${NC}"
+echo -e "${GREEN}║   🧜 Installation Complete! 🎉        ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${BLUE}To start monitoring:${NC}"
@@ -434,7 +434,7 @@ echo ""
 read -p "Do you want to start monitoring now? (Y/n): " -n 1 -r </dev/tty
 echo
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    echo -e "${GREEN}Starting monitor...${NC}"
+    echo -e "${GREEN}🧜 Starting monitor...${NC}"
     echo ""
     # Clean up log file on success before exec
     rm -f "$INSTALL_LOG"

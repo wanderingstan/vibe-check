@@ -16,7 +16,7 @@ INSTALL_DIR="$HOME/.vibe-check"
 
 echo -e "${BLUE}"
 echo "╔═══════════════════════════════════════╗"
-echo "║     Vibe Check Uninstaller            ║"
+echo "║   🧜 Vibe Check Uninstaller           ║"
 echo "╚═══════════════════════════════════════╝"
 echo -e "${NC}"
 

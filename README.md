@@ -1,4 +1,4 @@
-# Vibe-Check Claude Code Conversation Monitor
+# 🧜 Vibe-Check Claude Code Conversation Monitor
 
 Monitors Claude Code conversation files and sends events to the Vibe Check API server for storage.
 

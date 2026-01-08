@@ -9,7 +9,7 @@ VENV_PYTHON="$SCRIPT_DIR/venv/bin/python3"
 
 case "$1" in
     start)
-        echo "Starting monitor..."
+        echo "🧜 Starting monitor..."
         bash "$MONITOR_SCRIPT"
         ;;
 
@@ -17,16 +17,16 @@ case "$1" in
         if [ -f "$PID_FILE" ]; then
             PID=$(cat "$PID_FILE")
             if ps -p "$PID" > /dev/null 2>&1; then
-                echo "Stopping monitor (PID: $PID)..."
+                echo "🧜 Stopping monitor (PID: $PID)..."
                 kill "$PID"
                 rm "$PID_FILE"
-                echo "Monitor stopped"
+                echo "✅ Monitor stopped"
             else
-                echo "Monitor not running (stale PID file)"
+                echo "⚠️  Monitor not running (stale PID file)"
                 rm "$PID_FILE"
             fi
         else
-            echo "Monitor not running (no PID file)"
+            echo "⚠️  Monitor not running (no PID file)"
         fi
         ;;
 
@@ -40,42 +40,42 @@ case "$1" in
         if [ -f "$PID_FILE" ]; then
             PID=$(cat "$PID_FILE")
             if ps -p "$PID" > /dev/null 2>&1; then
-                echo "Monitor is running (PID: $PID)"
+                echo "✅ Monitor is running (PID: $PID)"
                 ps -p "$PID" -o pid,etime,command
             else
-                echo "Monitor not running (stale PID file)"
+                echo "⚠️  Monitor not running (stale PID file)"
             fi
         else
-            echo "Monitor not running"
+            echo "⚠️  Monitor not running"
         fi
         ;;
 
     install-cron)
-        echo "Installing cron job to check every 15 minutes..."
+        echo "🧜 Installing cron job to check every 15 minutes..."
 
         # Check if cron job already exists
         if crontab -l 2>/dev/null | grep -q "monitor_vibe_check.sh"; then
-            echo "Cron job already exists:"
+            echo "✅ Cron job already exists:"
             crontab -l | grep "monitor_vibe_check.sh"
         else
             # Add to crontab
             (crontab -l 2>/dev/null; echo "*/15 * * * * $MONITOR_SCRIPT") | crontab -
-            echo "Cron job installed:"
+            echo "✅ Cron job installed:"
             crontab -l | grep "monitor_vibe_check.sh"
         fi
         ;;
 
     uninstall-cron)
-        echo "Removing cron job..."
+        echo "🧜 Removing cron job..."
         crontab -l 2>/dev/null | grep -v "monitor_vibe_check.sh" | crontab -
-        echo "Cron job removed"
+        echo "✅ Cron job removed"
         ;;
 
     logs)
         LOG_FILE="$HOME/logs/vibe_check_monitor.log"
         MONITOR_LOG="$SCRIPT_DIR/monitor.log"
 
-        echo "=== Monitor check log (last 20 lines) ==="
+        echo "🧜 === Monitor check log (last 20 lines) ==="
         if [ -f "$LOG_FILE" ]; then
             tail -20 "$LOG_FILE"
         else
@@ -83,7 +83,7 @@ case "$1" in
         fi
 
         echo ""
-        echo "=== Monitor output (last 30 lines) ==="
+        echo "🧜 === Monitor output (last 30 lines) ==="
         if [ -f "$MONITOR_LOG" ]; then
             tail -30 "$MONITOR_LOG"
         else
@@ -92,6 +92,8 @@ case "$1" in
         ;;
 
     *)
+        echo "🧜 Vibe-Check Monitor Management"
+        echo ""
         echo "Usage: $0 {start|stop|restart|status|install-cron|uninstall-cron|logs}"
         echo ""
         echo "Commands:"
