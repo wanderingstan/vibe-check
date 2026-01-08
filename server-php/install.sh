@@ -3,6 +3,73 @@
 # Vibe Check Installer
 # Install via: curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
 
+# Set up logging to temp file
+INSTALL_LOG=$(mktemp /tmp/vibe-check-install.XXXXXX.log)
+echo "Logging installation to: $INSTALL_LOG"
+
+# Redirect all output to both console and log file
+exec > >(tee -a "$INSTALL_LOG") 2>&1
+
+# Error handler - launches Claude Code to diagnose issues
+handle_error() {
+    local exit_code=$?
+    local line_number=$1
+
+    echo ""
+    echo -e "${RED}╔═══════════════════════════════════════╗${NC}"
+    echo -e "${RED}║   Installation Failed (exit $exit_code)      ║${NC}"
+    echo -e "${RED}╚═══════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${YELLOW}Installation log saved to: $INSTALL_LOG${NC}"
+
+    # Check if Claude Code CLI is available
+    if command -v claude &> /dev/null; then
+        echo ""
+        echo -e "${BLUE}🤖 Launching Claude Code to diagnose the issue...${NC}"
+        echo ""
+
+        # Find the README.md (might be in the repo if cloned, or fetch from GitHub)
+        local readme_path=""
+        if [ -f "$INSTALL_DIR/README.md" ]; then
+            readme_path="$INSTALL_DIR/README.md"
+        elif [ -f "README.md" ]; then
+            readme_path="README.md"
+        fi
+
+        # Create a prompt for Claude
+        local prompt="The Vibe Check installation script failed with exit code $exit_code at line $line_number.
+
+Please analyze the installation log below and the project README to diagnose what went wrong and suggest how to fix it.
+
+Installation log:
+\`\`\`
+$(cat "$INSTALL_LOG")
+\`\`\`
+"
+
+        # If we have the README, include it in the context
+        if [ -n "$readme_path" ]; then
+            claude -m "$prompt" -f "$readme_path"
+        else
+            # Fetch README from GitHub and include it
+            claude -m "$prompt
+
+Note: Could not find local README.md. You may want to fetch it from: https://raw.githubusercontent.com/wanderingstan/vibe-check/main/README.md"
+        fi
+    else
+        echo ""
+        echo -e "${YELLOW}💡 Tip: Install Claude Code CLI to get automatic error diagnosis:${NC}"
+        echo -e "${YELLOW}   https://claude.com/claude-code${NC}"
+        echo ""
+        echo -e "${BLUE}You can manually share this log with Claude Code:${NC}"
+        echo -e "${BLUE}   cat $INSTALL_LOG${NC}"
+    fi
+
+    exit $exit_code
+}
+
+# Set up error trap
+trap 'handle_error $LINENO' ERR
 set -e
 
 # Colors for output
@@ -190,7 +257,12 @@ if [ -d "$INSTALL_DIR" ]; then
         if [[ ! $REPLY =~ ^[Nn]$ ]]; then
             echo -e "${GREEN}Starting monitor...${NC}"
             echo ""
+            # Clean up log file on success before exec
+            rm -f "$INSTALL_LOG"
             exec "$INSTALL_DIR/start.sh" $SKIP_BACKLOG
+        else
+            # Clean up log file on success
+            rm -f "$INSTALL_LOG"
         fi
         exit 0
     fi
@@ -364,5 +436,11 @@ echo
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo -e "${GREEN}Starting monitor...${NC}"
     echo ""
+    # Clean up log file on success before exec
+    rm -f "$INSTALL_LOG"
     exec "$INSTALL_DIR/start.sh" $SKIP_BACKLOG
+else
+    # Clean up log file on success
+    echo -e "${BLUE}Installation log: $INSTALL_LOG (you can delete this)${NC}"
+    rm -f "$INSTALL_LOG"
 fi
