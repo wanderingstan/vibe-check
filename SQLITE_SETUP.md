@@ -17,6 +17,13 @@ By default, the monitor sends events to a remote API server. With SQLite integra
 
 ## Setup Instructions
 
+### 0. Migration Note (If You Have Existing Data)
+
+If you already have a database with the old schema, you'll need to either:
+
+1. Delete the old database file and let it recreate with the new schema
+2. Or manually migrate the data (see Migration section below)
+
 ### 1. Enable SQLite in Configuration
 
 Edit [config.json](config.json) and configure the SQLite section:
@@ -25,7 +32,8 @@ Edit [config.json](config.json) and configure the SQLite section:
 {
   "sqlite": {
     "enabled": true,
-    "database_path": "~/Developer/vibe-check/vibe_check.db"
+    "database_path": "~/Developer/vibe-check/vibe_check.db",
+    "user_name": "your_username"
   }
 }
 ```
@@ -42,29 +50,45 @@ That's it! No server installation, no credentials needed.
 
 ## Database Schema
 
-The database contains one main table that is automatically created:
+The database contains one main table that is automatically created. The schema matches the MySQL server schema for consistency.
 
-### `events` Table
+### `conversation_events` Table
 
-| Column | Type | Description |
-|--------|------|-------------|
-| id | INTEGER | Auto-incrementing primary key |
-| file_name | TEXT | Relative path to the conversation file |
-| line_number | INTEGER | Line number in the file |
-| event_data | TEXT | Full event data as JSON |
-| timestamp | DATETIME | When the event was recorded (database time) |
+| Column            | Type     | Description                                                        |
+| ----------------- | -------- | ------------------------------------------------------------------ |
+| id                | INTEGER  | Auto-incrementing primary key                                      |
+| file_name         | TEXT     | Relative path to the conversation file                             |
+| line_number       | INTEGER  | Line number in the file                                            |
+| event_data        | TEXT     | Full event data as JSON                                            |
+| user_name         | TEXT     | Username from configuration                                        |
+| inserted_at       | DATETIME | When the event was recorded (database time)                        |
+| event_type        | TEXT     | Generated: Event type (e.g., "user", "assistant")                  |
+| event_message     | TEXT     | Generated: Message text content (NULL if not a message event)      |
+| event_git_branch  | TEXT     | Generated: Git branch name                                         |
+| event_session_id  | TEXT     | Generated: Claude Code session ID                                  |
+| event_uuid        | TEXT     | Generated: Event UUID                                              |
+| event_timestamp   | TEXT     | Generated: Event timestamp from the event data                     |
 
 **Indexes:**
+
 - `idx_file_name` - For fast file lookups
-- `idx_timestamp` - For time-based queries
+- `idx_user_name` - For filtering by user
+- `idx_inserted_at` - For time-based queries
+- `idx_event_type` - For filtering by event type
+- `idx_event_message` - For filtering messages (partial index)
+- `idx_event_git_branch` - For filtering by git branch
+- `idx_event_session_id` - For filtering by session
+- `idx_event_uuid` - For filtering by UUID
 - Unique constraint on `(file_name, line_number)` to prevent duplicates
+
+**Note:** Generated columns are STORED (not virtual), meaning they're computed once on insert and physically stored for fast queries.
 
 ## Usage
 
 ### View Recent Events with sqlite3 CLI
 
 ```bash
-sqlite3 ~/Developer/vibe-check/vibe_check.db "SELECT * FROM events ORDER BY timestamp DESC LIMIT 10;"
+sqlite3 ~/Developer/vibe-check/vibe_check.db "SELECT * FROM conversation_events ORDER BY inserted_at DESC LIMIT 10;"
 ```
 
 ### Count Events by File
@@ -72,7 +96,7 @@ sqlite3 ~/Developer/vibe-check/vibe_check.db "SELECT * FROM events ORDER BY time
 ```bash
 sqlite3 ~/Developer/vibe-check/vibe_check.db "
 SELECT file_name, COUNT(*) as event_count
-FROM events
+FROM conversation_events
 GROUP BY file_name
 ORDER BY event_count DESC
 LIMIT 10;
@@ -85,9 +109,60 @@ LIMIT 10;
 sqlite3 ~/Developer/vibe-check/vibe_check.db "
 SELECT
   file_name,
-  json_extract(event_data, '$.type') AS type,
-  substr(event_data, 1, 100) AS content_preview
-FROM events
+  event_type,
+  user_name,
+  inserted_at
+FROM conversation_events
+LIMIT 10;
+"
+```
+
+### Query Messages Only
+
+```bash
+sqlite3 ~/Developer/vibe-check/vibe_check.db "
+SELECT
+  user_name,
+  event_type,
+  event_message,
+  event_git_branch,
+  inserted_at
+FROM conversation_events
+WHERE event_message IS NOT NULL
+ORDER BY inserted_at DESC
+LIMIT 20;
+"
+```
+
+### Query by Git Branch
+
+```bash
+sqlite3 ~/Developer/vibe-check/vibe_check.db "
+SELECT
+  event_git_branch,
+  COUNT(*) as event_count,
+  COUNT(event_message) as message_count
+FROM conversation_events
+WHERE event_git_branch IS NOT NULL
+GROUP BY event_git_branch
+ORDER BY event_count DESC
+LIMIT 10;
+"
+```
+
+### Query by Session
+
+```bash
+sqlite3 ~/Developer/vibe-check/vibe_check.db "
+SELECT
+  event_session_id,
+  COUNT(*) as event_count,
+  MIN(inserted_at) as session_start,
+  MAX(inserted_at) as session_end
+FROM conversation_events
+WHERE event_session_id IS NOT NULL
+GROUP BY event_session_id
+ORDER BY session_start DESC
 LIMIT 10;
 "
 ```
@@ -96,17 +171,25 @@ LIMIT 10;
 
 ```python
 import sqlite3
-import json
+from pathlib import Path
 
-conn = sqlite3.connect('~/Developer/vibe-check/vibe_check.db')
+db_path = Path('~/Developer/vibe-check/vibe_check.db').expanduser()
+conn = sqlite3.connect(str(db_path))
 cursor = conn.cursor()
 
-# Get recent events
-cursor.execute("SELECT * FROM events ORDER BY timestamp DESC LIMIT 10")
+# Get recent messages with branch info
+cursor.execute("""
+    SELECT user_name, event_type, event_message, event_git_branch, inserted_at
+    FROM conversation_events
+    WHERE event_message IS NOT NULL
+    ORDER BY inserted_at DESC
+    LIMIT 10
+""")
+
 for row in cursor.fetchall():
-    event_id, file_name, line_number, event_data, timestamp = row
-    event = json.loads(event_data)
-    print(f"{timestamp}: {file_name}:{line_number} - {event.get('type')}")
+    user_name, event_type, message, branch, inserted_at = row
+    branch_info = f" [{branch}]" if branch else ""
+    print(f"{inserted_at} [@{user_name}]{branch_info} {event_type}: {message[:100]}")
 
 conn.close()
 ```
@@ -120,6 +203,7 @@ Check the monitor logs to see SQLite status:
 ```
 
 You should see messages like:
+
 - `Connected to SQLite database: /path/to/vibe_check.db`
 - `Inserted: filename.jsonl:123 → API, SQLite`
 
@@ -153,8 +237,8 @@ To delete old events (older than 30 days):
 
 ```bash
 sqlite3 ~/Developer/vibe-check/vibe_check.db "
-DELETE FROM events
-WHERE timestamp < datetime('now', '-30 days');
+DELETE FROM conversation_events
+WHERE inserted_at < datetime('now', '-30 days');
 VACUUM;
 "
 ```
@@ -201,7 +285,7 @@ cp ~/Developer/vibe-check/vibe_check_backup.db ~/Developer/vibe-check/vibe_check
 ### Export to CSV
 
 ```bash
-sqlite3 -header -csv ~/Developer/vibe-check/vibe_check.db "SELECT * FROM events;" > events.csv
+sqlite3 -header -csv ~/Developer/vibe-check/vibe_check.db "SELECT * FROM conversation_events;" > events.csv
 ```
 
 ### Export to JSON
@@ -211,9 +295,14 @@ sqlite3 ~/Developer/vibe-check/vibe_check.db "SELECT json_group_array(json_objec
   'id', id,
   'file_name', file_name,
   'line_number', line_number,
-  'event_data', json(event_data),
-  'timestamp', timestamp
-)) FROM events;" > events.json
+  'user_name', user_name,
+  'inserted_at', inserted_at,
+  'event_type', event_type,
+  'event_message', event_message,
+  'event_git_branch', event_git_branch,
+  'event_session_id', event_session_id,
+  'event_uuid', event_uuid
+)) FROM conversation_events;" > events.json
 ```
 
 ### Using with DB Browser for SQLite
@@ -242,6 +331,38 @@ Paths starting with `~/` are automatically expanded to your home directory.
 - The database is not encrypted by default
 - For sensitive data, consider encrypting the filesystem or using an encrypted disk image
 
+## Migrating from Old Schema
+
+If you have an existing database with an older schema, use the migration script:
+
+```bash
+# IMPORTANT: Stop the monitor first (otherwise database will be locked)
+./manage_monitor.sh stop
+
+# Backup your database
+cp ~/Developer/vibe-check/vibe_check.db ~/Developer/vibe-check/vibe_check_backup_$(date +%Y%m%d).db
+
+# Run the migration script
+sqlite3 ~/Developer/vibe-check/vibe_check.db < migrate_sqlite.sql
+
+# Restart the monitor
+./manage_monitor.sh start
+```
+
+The migration script ([migrate_sqlite.sql](migrate_sqlite.sql)) will:
+- Create a new table with the updated schema
+- Copy all existing data (generated columns are auto-computed)
+- Drop the old table and rename the new one
+- Recreate all indexes
+- Display verification statistics
+
+Or simply delete the old database and start fresh:
+
+```bash
+rm ~/Developer/vibe-check/vibe_check.db
+./manage_monitor.sh restart
+```
+
 ## Advantages Over MySQL
 
 - **No server required**: SQLite is serverless and file-based
@@ -253,6 +374,7 @@ Paths starting with `~/` are automatically expanded to your home directory.
 ## When to Use MySQL Instead
 
 Consider MySQL if you need:
+
 - Multiple concurrent writers from different machines
 - Network access to the database
 - Advanced user permissions and access control

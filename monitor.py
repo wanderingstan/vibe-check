@@ -98,6 +98,7 @@ class SQLiteManager:
         """Initialize SQLite manager with configuration."""
         self.config = config
         self.enabled = config.get('enabled', False)
+        self.user_name = config.get('user_name', 'unknown')
         self.connection = None
         self.cursor = None
         self.db_path = None
@@ -127,22 +128,53 @@ class SQLiteManager:
     def create_schema(self):
         """Create database schema if it doesn't exist."""
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS events (
+            CREATE TABLE IF NOT EXISTS conversation_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_name TEXT NOT NULL,
                 line_number INTEGER NOT NULL,
                 event_data TEXT NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_name TEXT NOT NULL,
+                inserted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                event_type TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.type')) STORED,
+                event_message TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.content[0].text')) STORED,
+                event_git_branch TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.gitBranch')) STORED,
+                event_session_id TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.sessionId')) STORED,
+                event_uuid TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.uuid')) STORED,
+                event_timestamp TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.timestamp')) STORED,
                 UNIQUE(file_name, line_number)
             )
         """)
 
         # Create indexes
         self.cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_file_name ON events(file_name)
+            CREATE INDEX IF NOT EXISTS idx_file_name ON conversation_events(file_name)
         """)
         self.cursor.execute("""
-            CREATE INDEX IF NOT EXISTS idx_timestamp ON events(timestamp)
+            CREATE INDEX IF NOT EXISTS idx_user_name ON conversation_events(user_name)
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_inserted_at ON conversation_events(inserted_at)
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_event_type ON conversation_events(event_type)
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_event_message ON conversation_events(event_message)
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_event_git_branch ON conversation_events(event_git_branch)
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_event_session_id ON conversation_events(event_session_id)
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_event_uuid ON conversation_events(event_uuid)
         """)
 
         self.connection.commit()
@@ -158,10 +190,10 @@ class SQLiteManager:
 
             # Insert or ignore duplicates
             query = """
-                INSERT OR IGNORE INTO events (file_name, line_number, event_data)
-                VALUES (?, ?, ?)
+                INSERT OR IGNORE INTO conversation_events (file_name, line_number, event_data, user_name)
+                VALUES (?, ?, ?, ?)
             """
-            self.cursor.execute(query, (filename, line_number, event_json))
+            self.cursor.execute(query, (filename, line_number, event_json, self.user_name))
             self.connection.commit()
 
             return True
