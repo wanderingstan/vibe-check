@@ -453,6 +453,73 @@ class ConversationMonitor(FileSystemEventHandler):
         print("Finished processing existing files\n")
 
 
+def check_claude_skills():
+    """Check if Claude Code skills are installed and prompt to install if not."""
+    skills_dir = Path.home() / '.claude' / 'skills'
+    skills_to_check = [
+        'claude-stats.md',
+        'search-conversations.md',
+        'analyze-tools.md',
+        'recent-work.md'
+    ]
+
+    # Check if any skills are missing
+    missing_skills = []
+    for skill in skills_to_check:
+        if not (skills_dir / skill).exists():
+            missing_skills.append(skill)
+
+    # If all skills are installed, nothing to do
+    if not missing_skills:
+        return
+
+    # Check if we're in the vibe-check directory with the installer
+    script_dir = Path(__file__).parent
+    installer_path = script_dir / 'claude-skills' / 'install-skills.sh'
+
+    if not installer_path.exists():
+        # Installer not available (maybe installed via package manager)
+        return
+
+    # Skills are missing and installer is available - prompt user
+    print("\n" + "="*70)
+    print("📚 Claude Code Skills Available!")
+    print("="*70)
+    print("\nVibe Check includes Claude Code skills that let you query your")
+    print("conversation history using natural language!")
+    print(f"\nMissing skills: {len(missing_skills)}/{len(skills_to_check)}")
+    print("\nOnce installed, you can ask Claude:")
+    print("  • 'claude stats' - View usage statistics")
+    print("  • 'what have I been working on?' - See recent sessions")
+    print("  • 'search my conversations for X' - Search history")
+    print("  • 'what tools do I use most?' - Analyze tool usage")
+    print("\nWould you like to install the skills now? (y/n): ", end='', flush=True)
+
+    try:
+        response = input().strip().lower()
+        if response in ['y', 'yes']:
+            print("\nInstalling skills...")
+            result = subprocess.run(
+                [str(installer_path)],
+                cwd=str(script_dir),
+                capture_output=False
+            )
+            if result.returncode == 0:
+                print("\n✅ Skills installed successfully!")
+            else:
+                print("\n⚠️  Installation had some issues. You can install manually later:")
+                print(f"   {installer_path}")
+        else:
+            print("\nSkipped. You can install skills later by running:")
+            print(f"  {installer_path}")
+    except (EOFError, KeyboardInterrupt):
+        print("\n\nSkipped. You can install skills later by running:")
+        print(f"  {installer_path}")
+
+    print("="*70)
+    print()
+
+
 def main():
     """Main entry point."""
     # Parse command-line arguments
@@ -463,6 +530,11 @@ def main():
         '--skip-backlog',
         action='store_true',
         help='Skip existing conversation history and start monitoring from current position'
+    )
+    parser.add_argument(
+        '--skip-skills-check',
+        action='store_true',
+        help='Skip checking for Claude Code skills installation'
     )
     args = parser.parse_args()
 
@@ -484,6 +556,10 @@ def main():
         sys.exit(1)
 
     print(f"Monitoring directory: {conversation_dir}")
+
+    # Check for Claude Code skills (unless skipped)
+    if not args.skip_skills_check:
+        check_claude_skills()
 
     # Debug filter
     debug_filter = config['monitor'].get('debug_filter_project')
