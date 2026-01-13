@@ -196,14 +196,21 @@ if ($endpoint === 'events' && $request_method === 'POST') {
     }
 
     // Insert event
+    $git_remote_url = isset($input['git_remote_url']) ? $input['git_remote_url'] : null;
+    $git_commit_hash = isset($input['git_commit_hash']) ? $input['git_commit_hash'] : null;
+
     $stmt = $mysqli->prepare("
-        INSERT INTO conversation_events (file_name, line_number, event_data, user_name)
-        VALUES (?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE event_data = VALUES(event_data), user_name = VALUES(user_name)
+        INSERT INTO conversation_events (file_name, line_number, event_data, user_name, git_remote_url, git_commit_hash)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+            event_data = VALUES(event_data),
+            user_name = VALUES(user_name),
+            git_remote_url = VALUES(git_remote_url),
+            git_commit_hash = VALUES(git_commit_hash)
     ");
 
     $event_data_json = json_encode($input['event_data']);
-    $stmt->bind_param("siss", $input['file_name'], $input['line_number'], $event_data_json, $user_name);
+    $stmt->bind_param("sissss", $input['file_name'], $input['line_number'], $event_data_json, $user_name, $git_remote_url, $git_commit_hash);
 
     if ($stmt->execute()) {
         http_response_code(201);
