@@ -9,16 +9,49 @@ sends new events to the Vibe Check API server.
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 import requests
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
 import sqlite3
+
+
+def get_git_info(directory: Path) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Get git remote URL and commit hash from a directory.
+    Returns (remote_url, commit_hash) or (None, None) if not a git repo.
+    """
+    if not directory or not directory.exists():
+        return None, None
+
+    try:
+        # Get remote URL
+        result = subprocess.run(
+            ['git', '-C', str(directory), 'remote', 'get-url', 'origin'],
+            capture_output=True,
+            text=True,
+            timeout=1
+        )
+        remote_url = result.stdout.strip() if result.returncode == 0 else None
+
+        # Get commit hash
+        result = subprocess.run(
+            ['git', '-C', str(directory), 'rev-parse', 'HEAD'],
+            capture_output=True,
+            text=True,
+            timeout=1
+        )
+        commit_hash = result.stdout.strip() if result.returncode == 0 else None
+
+        return remote_url, commit_hash
+    except (subprocess.TimeoutExpired, FileNotFoundError, Exception):
+        return None, None
 
 
 class StateManager:
@@ -147,6 +180,8 @@ class SQLiteManager:
                     (json_extract(event_data, '$.uuid')) STORED,
                 event_timestamp TEXT GENERATED ALWAYS AS
                     (json_extract(event_data, '$.timestamp')) STORED,
+                git_remote_url TEXT,
+                git_commit_hash TEXT,
                 UNIQUE(file_name, line_number)
             )
         """)
@@ -176,10 +211,17 @@ class SQLiteManager:
         self.cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_event_uuid ON conversation_events(event_uuid)
         """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_git_remote_url ON conversation_events(git_remote_url)
+        """)
+        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_git_commit_hash ON conversation_events(git_commit_hash)
+        """)
 
         self.connection.commit()
 
-    def insert_event(self, filename: str, line_number: int, event_data: dict) -> bool:
+    def insert_event(self, filename: str, line_number: int, event_data: dict,
+                     git_remote_url: Optional[str] = None, git_commit_hash: Optional[str] = None) -> bool:
         """Insert an event into the SQLite database."""
         if not self.enabled:
             return False
@@ -190,10 +232,12 @@ class SQLiteManager:
 
             # Insert or ignore duplicates
             query = """
-                INSERT OR IGNORE INTO conversation_events (file_name, line_number, event_data, user_name)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO conversation_events
+                (file_name, line_number, event_data, user_name, git_remote_url, git_commit_hash)
+                VALUES (?, ?, ?, ?, ?, ?)
             """
-            self.cursor.execute(query, (filename, line_number, event_json, self.user_name))
+            self.cursor.execute(query, (filename, line_number, event_json, self.user_name,
+                                       git_remote_url, git_commit_hash))
             self.connection.commit()
 
             return True
@@ -329,6 +373,13 @@ class ConversationMonitor(FileSystemEventHandler):
         api_success = False
         sqlite_success = False
 
+        # Get git info from working directory if available
+        git_remote_url = None
+        git_commit_hash = None
+        working_dir = event_data.get('cwd')
+        if working_dir:
+            git_remote_url, git_commit_hash = get_git_info(Path(working_dir))
+
         # Try API first
         try:
             response = self.session.post(
@@ -336,7 +387,9 @@ class ConversationMonitor(FileSystemEventHandler):
                 json={
                     'file_name': filename,
                     'line_number': line_number,
-                    'event_data': event_data
+                    'event_data': event_data,
+                    'git_remote_url': git_remote_url,
+                    'git_commit_hash': git_commit_hash
                 }
             )
             response.raise_for_status()
@@ -346,7 +399,8 @@ class ConversationMonitor(FileSystemEventHandler):
 
         # Try SQLite if enabled
         if self.sqlite_manager and self.sqlite_manager.enabled:
-            sqlite_success = self.sqlite_manager.insert_event(filename, line_number, event_data)
+            sqlite_success = self.sqlite_manager.insert_event(filename, line_number, event_data,
+                                                             git_remote_url, git_commit_hash)
 
         # Report success
         if api_success or sqlite_success:
@@ -355,7 +409,17 @@ class ConversationMonitor(FileSystemEventHandler):
                 status.append("API")
             if sqlite_success:
                 status.append("SQLite")
-            print(f"  Inserted: {filename}:{line_number} → {', '.join(status)}")
+            git_info = []
+            if git_remote_url:
+                # Extract repo name from URL
+                repo_name = git_remote_url.split('/')[-1].replace('.git', '')
+                git_info.append(f"repo:{repo_name}")
+            if git_commit_hash:
+                git_info.append(f"commit:{git_commit_hash[:7]}")
+            status_msg = f"  Inserted: {filename}:{line_number} → {', '.join(status)}"
+            if git_info:
+                status_msg += f" [{', '.join(git_info)}]"
+            print(status_msg)
 
         # Only raise error if both failed
         if not api_success and not sqlite_success:
