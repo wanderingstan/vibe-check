@@ -234,8 +234,9 @@ if [ -d "$INSTALL_DIR" ]; then
         # Skip to the end (start monitoring)
         SKIP_BACKLOG="--skip-backlog"
 
-        # Extract username from config for display (may be empty for old configs)
+        # Extract username and enabled status from config for display (may be empty for old configs)
         USERNAME=$(grep -o '"username":"[^"]*' config.json 2>/dev/null | cut -d'"' -f4)
+        API_ENABLED=$(grep -o '"enabled":\s*true' config.json 2>/dev/null | head -1)
 
         echo ""
         echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
@@ -245,7 +246,7 @@ if [ -d "$INSTALL_DIR" ]; then
         echo -e "${BLUE}To start monitoring:${NC}"
         echo -e "  $INSTALL_DIR/start.sh"
         echo ""
-        if [ -n "$USERNAME" ]; then
+        if [ -n "$USERNAME" ] && [ -n "$API_ENABLED" ]; then
             echo -e "${BLUE}View your stats at:${NC}"
             echo -e "  https://vibecheck.wanderingstan.com/stats.php?user=$USERNAME"
             echo ""
@@ -319,61 +320,84 @@ if [ "$SKIP_CLONE" != "true" ]; then
     fi
 fi
 
-# Get username from user
+# Ask about sending to remote server
 echo ""
-echo -e "${BLUE}Creating your API credentials...${NC}"
-while true; do
-    read -p "Enter your desired username: " USERNAME </dev/tty
-    if [ -z "$USERNAME" ]; then
-        echo -e "${RED}Username cannot be empty. Please try again.${NC}"
-        continue
-    fi
-    # Sanitize username: only allow alphanumeric, underscore, hyphen
-    if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        echo -e "${RED}Username can only contain letters, numbers, underscores, and hyphens.${NC}"
-        continue
-    fi
-    if [ ${#USERNAME} -gt 32 ]; then
-        echo -e "${RED}Username must be 32 characters or less.${NC}"
-        continue
-    fi
-    break
-done
-
-# Register user and get API key
-echo -e "${BLUE}Registering user '$USERNAME'...${NC}"
-RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/create-token" \
-    -H "Content-Type: application/json" \
-    -d "{\"username\":\"$USERNAME\"}")
-
-HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-BODY=$(echo "$RESPONSE" | sed '$d')
-
-if [ "$HTTP_CODE" != "201" ]; then
-    echo -e "${RED}✗ Failed to create API token${NC}"
-    echo -e "${RED}Error: $BODY${NC}"
-    exit 1
+echo -e "${BLUE}Do you want to send your conversations to the remote server?${NC}"
+echo -e "${YELLOW}Note: Conversations are always saved locally to SQLite.${NC}"
+read -p "Send to remote server? (Y/n): " -n 1 -r </dev/tty
+echo
+if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+    ENABLE_REMOTE=true
+else
+    ENABLE_REMOTE=false
 fi
 
-API_KEY=$(echo "$BODY" | grep -o '"api_key":"[^"]*' | cut -d'"' -f4)
+# Get username and register if remote is enabled
+if [ "$ENABLE_REMOTE" = true ]; then
+    echo ""
+    echo -e "${BLUE}Creating your API credentials...${NC}"
+    while true; do
+        read -p "Enter your desired username: " USERNAME </dev/tty
+        if [ -z "$USERNAME" ]; then
+            echo -e "${RED}Username cannot be empty. Please try again.${NC}"
+            continue
+        fi
+        # Sanitize username: only allow alphanumeric, underscore, hyphen
+        if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            echo -e "${RED}Username can only contain letters, numbers, underscores, and hyphens.${NC}"
+            continue
+        fi
+        if [ ${#USERNAME} -gt 32 ]; then
+            echo -e "${RED}Username must be 32 characters or less.${NC}"
+            continue
+        fi
+        break
+    done
 
-if [ -z "$API_KEY" ]; then
-    echo -e "${RED}✗ Failed to extract API key from response${NC}"
-    exit 1
+    # Register user and get API key
+    echo -e "${BLUE}Registering user '$USERNAME'...${NC}"
+    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/create-token" \
+        -H "Content-Type: application/json" \
+        -d "{\"username\":\"$USERNAME\"}")
+
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    BODY=$(echo "$RESPONSE" | sed '$d')
+
+    if [ "$HTTP_CODE" != "201" ]; then
+        echo -e "${RED}✗ Failed to create API token${NC}"
+        echo -e "${RED}Error: $BODY${NC}"
+        exit 1
+    fi
+
+    API_KEY=$(echo "$BODY" | grep -o '"api_key":"[^"]*' | cut -d'"' -f4)
+
+    if [ -z "$API_KEY" ]; then
+        echo -e "${RED}✗ Failed to extract API key from response${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ User registered successfully!${NC}"
+    echo -e "${GREEN}  Username: $USERNAME${NC}"
+    echo -e "${GREEN}  API Key: $API_KEY${NC}"
+else
+    USERNAME=""
+    API_KEY=""
 fi
-
-echo -e "${GREEN}✓ User registered successfully!${NC}"
-echo -e "${GREEN}  Username: $USERNAME${NC}"
-echo -e "${GREEN}  API Key: $API_KEY${NC}"
 
 # Create config.json
 echo -e "${BLUE}Creating configuration file...${NC}"
 cat > "$INSTALL_DIR/config.json" <<EOF
 {
   "api": {
+    "enabled": $ENABLE_REMOTE,
     "url": "$API_URL",
     "api_key": "$API_KEY",
     "username": "$USERNAME"
+  },
+  "sqlite": {
+    "enabled": true,
+    "database_path": "~/.vibe-check/vibe_check.db",
+    "user_name": "$USERNAME"
   },
   "monitor": {
     "conversation_dir": "~/.claude/projects",
@@ -426,9 +450,11 @@ echo ""
 echo -e "${BLUE}To run in the background:${NC}"
 echo -e "  nohup $INSTALL_DIR/start.sh $SKIP_BACKLOG > $INSTALL_DIR/monitor.log 2>&1 &"
 echo ""
-echo -e "${BLUE}View your stats at:${NC}"
-echo -e "  ${BLUE}https://vibecheck.wanderingstan.com/stats.php?user=$USERNAME${NC}"
-echo ""
+if [ "$ENABLE_REMOTE" = true ] && [ -n "$USERNAME" ]; then
+    echo -e "${BLUE}View your stats at:${NC}"
+    echo -e "  ${BLUE}https://vibecheck.wanderingstan.com/stats.php?user=$USERNAME${NC}"
+    echo ""
+fi
 
 # Ask if user wants to start now
 read -p "Do you want to start monitoring now? (Y/n): " -n 1 -r </dev/tty

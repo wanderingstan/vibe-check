@@ -33,19 +33,19 @@ def get_git_info(directory: Path) -> Tuple[Optional[str], Optional[str]]:
     try:
         # Get remote URL
         result = subprocess.run(
-            ['git', '-C', str(directory), 'remote', 'get-url', 'origin'],
+            ["git", "-C", str(directory), "remote", "get-url", "origin"],
             capture_output=True,
             text=True,
-            timeout=1
+            timeout=1,
         )
         remote_url = result.stdout.strip() if result.returncode == 0 else None
 
         # Get commit hash
         result = subprocess.run(
-            ['git', '-C', str(directory), 'rev-parse', 'HEAD'],
+            ["git", "-C", str(directory), "rev-parse", "HEAD"],
             capture_output=True,
             text=True,
-            timeout=1
+            timeout=1,
         )
         commit_hash = result.stdout.strip() if result.returncode == 0 else None
 
@@ -66,7 +66,7 @@ class StateManager:
         """Load state from file."""
         if self.state_file.exists():
             try:
-                with open(self.state_file, 'r') as f:
+                with open(self.state_file, "r") as f:
                     self.state = json.load(f)
                 print(f"Loaded state: {len(self.state)} files tracked")
             except json.JSONDecodeError:
@@ -78,7 +78,7 @@ class StateManager:
 
     def save(self):
         """Save state to file."""
-        with open(self.state_file, 'w') as f:
+        with open(self.state_file, "w") as f:
             json.dump(self.state, f, indent=2)
 
     def get_last_line(self, filename: str) -> int:
@@ -94,7 +94,7 @@ class StateManager:
         """Fast-forward state to the end of all existing files without processing."""
         print("\nSkipping backlog - fast-forwarding to current position...")
         count = 0
-        for file_path in directory.glob('**/*.jsonl'):
+        for file_path in directory.glob("**/*.jsonl"):
             if not file_path.exists():
                 continue
 
@@ -111,7 +111,7 @@ class StateManager:
 
             # Count lines in file
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     line_count = sum(1 for _ in f)
 
                 if line_count > 0:
@@ -121,7 +121,9 @@ class StateManager:
             except Exception as e:
                 print(f"  Error reading {filename}: {e}")
 
-        print(f"Fast-forwarded {count} file(s). Monitoring will start from current position.\n")
+        print(
+            f"Fast-forwarded {count} file(s). Monitoring will start from current position.\n"
+        )
 
 
 class SQLiteManager:
@@ -130,8 +132,8 @@ class SQLiteManager:
     def __init__(self, config: dict):
         """Initialize SQLite manager with configuration."""
         self.config = config
-        self.enabled = config.get('enabled', False)
-        self.user_name = config.get('user_name', 'unknown')
+        self.enabled = config.get("enabled", False)
+        self.user_name = config.get("user_name", "unknown")
         self.connection = None
         self.cursor = None
         self.db_path = None
@@ -142,7 +144,7 @@ class SQLiteManager:
 
         try:
             # Expand path and create database
-            self.db_path = Path(config['database_path']).expanduser()
+            self.db_path = Path(config["database_path"]).expanduser()
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
             self.connect()
@@ -150,7 +152,9 @@ class SQLiteManager:
             print(f"Connected to SQLite database: {self.db_path}")
         except Exception as e:
             print(f"Error initializing SQLite: {e}")
-            print("SQLite recording will be disabled. Events will still be sent to API.")
+            print(
+                "SQLite recording will be disabled. Events will still be sent to API."
+            )
             self.enabled = False
 
     def connect(self):
@@ -160,7 +164,8 @@ class SQLiteManager:
 
     def create_schema(self):
         """Create database schema if it doesn't exist."""
-        self.cursor.execute("""
+        self.cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS conversation_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_name TEXT NOT NULL,
@@ -184,44 +189,71 @@ class SQLiteManager:
                 git_commit_hash TEXT,
                 UNIQUE(file_name, line_number)
             )
-        """)
+        """
+        )
 
         # Create indexes
-        self.cursor.execute("""
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_file_name ON conversation_events(file_name)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_user_name ON conversation_events(user_name)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_inserted_at ON conversation_events(inserted_at)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_event_type ON conversation_events(event_type)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_event_message ON conversation_events(event_message)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_event_git_branch ON conversation_events(event_git_branch)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_event_session_id ON conversation_events(event_session_id)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_event_uuid ON conversation_events(event_uuid)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_git_remote_url ON conversation_events(git_remote_url)
-        """)
-        self.cursor.execute("""
+        """
+        )
+        self.cursor.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_git_commit_hash ON conversation_events(git_commit_hash)
-        """)
+        """
+        )
 
         self.connection.commit()
 
-    def insert_event(self, filename: str, line_number: int, event_data: dict,
-                     git_remote_url: Optional[str] = None, git_commit_hash: Optional[str] = None) -> bool:
+    def insert_event(
+        self,
+        filename: str,
+        line_number: int,
+        event_data: dict,
+        git_remote_url: Optional[str] = None,
+        git_commit_hash: Optional[str] = None,
+    ) -> bool:
         """Insert an event into the SQLite database."""
         if not self.enabled:
             return False
@@ -236,8 +268,17 @@ class SQLiteManager:
                 (file_name, line_number, event_data, user_name, git_remote_url, git_commit_hash)
                 VALUES (?, ?, ?, ?, ?, ?)
             """
-            self.cursor.execute(query, (filename, line_number, event_json, self.user_name,
-                                       git_remote_url, git_commit_hash))
+            self.cursor.execute(
+                query,
+                (
+                    filename,
+                    line_number,
+                    event_json,
+                    self.user_name,
+                    git_remote_url,
+                    git_commit_hash,
+                ),
+            )
             self.connection.commit()
 
             return True
@@ -264,24 +305,36 @@ class SQLiteManager:
 class ConversationMonitor(FileSystemEventHandler):
     """Handles file system events for conversation files."""
 
-    def __init__(self, api_config: dict, state_manager: StateManager, base_dir: Path, sqlite_manager: Optional[SQLiteManager] = None, debug_filter_project: Optional[str] = None):
-        self.api_url = api_config['url']
-        self.api_key = api_config['api_key']
+    def __init__(
+        self,
+        api_config: dict,
+        state_manager: StateManager,
+        base_dir: Path,
+        sqlite_manager: Optional[SQLiteManager] = None,
+        debug_filter_project: Optional[str] = None,
+    ):
+        self.api_enabled = api_config.get("enabled", False)
+        self.api_url = api_config.get("url", "")
+        self.api_key = api_config.get("api_key", "")
         self.state_manager = state_manager
         self.base_dir = base_dir
         self.sqlite_manager = sqlite_manager
         self.debug_filter_project = debug_filter_project
         self.session = requests.Session()
-        self.session.headers.update({
-            'X-API-Key': self.api_key,
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-            'User-Agent': 'VibeCheck-Monitor/1.0'
-        })
+        self.session.headers.update(
+            {
+                "X-API-Key": self.api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "VibeCheck-Monitor/1.0",
+            }
+        )
 
-        # Auto-detect if we need /api.php in the URL
         self.api_endpoint = self.api_url
-        self.test_connection()
+        if self.api_enabled:
+            self.test_connection()
+        else:
+            print("Remote API recording is disabled")
 
     def test_connection(self):
         """Test API connection."""
@@ -292,7 +345,7 @@ class ConversationMonitor(FileSystemEventHandler):
             print(f"Connected to API server: {self.api_endpoint}")
         except requests.RequestException as e:
             # If that fails and URL doesn't already have api.php, try adding it
-            if '/api.php' not in self.api_endpoint:
+            if "/api.php" not in self.api_endpoint:
                 try:
                     self.api_endpoint = f"{self.api_url}/api.php"
                     response = self.session.get(f"{self.api_endpoint}/health")
@@ -307,7 +360,7 @@ class ConversationMonitor(FileSystemEventHandler):
 
     def process_file(self, file_path: Path):
         """Process new lines in a JSONL file."""
-        if not file_path.suffix == '.jsonl':
+        if not file_path.suffix == ".jsonl":
             return
 
         if not file_path.exists():
@@ -329,7 +382,7 @@ class ConversationMonitor(FileSystemEventHandler):
         last_line = self.state_manager.get_last_line(filename)
 
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
             # Process only new lines
@@ -376,31 +429,33 @@ class ConversationMonitor(FileSystemEventHandler):
         # Get git info from working directory if available
         git_remote_url = None
         git_commit_hash = None
-        working_dir = event_data.get('cwd')
+        working_dir = event_data.get("cwd")
         if working_dir:
             git_remote_url, git_commit_hash = get_git_info(Path(working_dir))
 
-        # Try API first
-        try:
-            response = self.session.post(
-                f"{self.api_endpoint}/events",
-                json={
-                    'file_name': filename,
-                    'line_number': line_number,
-                    'event_data': event_data,
-                    'git_remote_url': git_remote_url,
-                    'git_commit_hash': git_commit_hash
-                }
-            )
-            response.raise_for_status()
-            api_success = True
-        except requests.RequestException as e:
-            print(f"  API error {filename}:{line_number}: {e}")
+        # Try API if enabled
+        if self.api_enabled:
+            try:
+                response = self.session.post(
+                    f"{self.api_endpoint}/events",
+                    json={
+                        "file_name": filename,
+                        "line_number": line_number,
+                        "event_data": event_data,
+                        "git_remote_url": git_remote_url,
+                        "git_commit_hash": git_commit_hash,
+                    },
+                )
+                response.raise_for_status()
+                api_success = True
+            except requests.RequestException as e:
+                print(f"  API error {filename}:{line_number}: {e}")
 
         # Try SQLite if enabled
         if self.sqlite_manager and self.sqlite_manager.enabled:
-            sqlite_success = self.sqlite_manager.insert_event(filename, line_number, event_data,
-                                                             git_remote_url, git_commit_hash)
+            sqlite_success = self.sqlite_manager.insert_event(
+                filename, line_number, event_data, git_remote_url, git_commit_hash
+            )
 
         # Report success
         if api_success or sqlite_success:
@@ -412,7 +467,7 @@ class ConversationMonitor(FileSystemEventHandler):
             git_info = []
             if git_remote_url:
                 # Extract repo name from URL
-                repo_name = git_remote_url.split('/')[-1].replace('.git', '')
+                repo_name = git_remote_url.split("/")[-1].replace(".git", "")
                 git_info.append(f"repo:{repo_name}")
             if git_commit_hash:
                 git_info.append(f"commit:{git_commit_hash[:7]}")
@@ -421,8 +476,14 @@ class ConversationMonitor(FileSystemEventHandler):
                 status_msg += f" [{', '.join(git_info)}]"
             print(status_msg)
 
-        # Only raise error if both failed
+        # Only raise error if both failed (or if neither is enabled)
         if not api_success and not sqlite_success:
+            if not self.api_enabled and not (
+                self.sqlite_manager and self.sqlite_manager.enabled
+            ):
+                raise requests.RequestException(
+                    "Both API and SQLite are disabled - at least one must be enabled"
+                )
             raise requests.RequestException("Both API and SQLite insertion failed")
 
     def on_modified(self, event):
@@ -431,7 +492,7 @@ class ConversationMonitor(FileSystemEventHandler):
             return
 
         file_path = Path(event.src_path)
-        if file_path.suffix == '.jsonl':
+        if file_path.suffix == ".jsonl":
             print(f"\nDetected change: {file_path.name}")
             self.process_file(file_path)
 
@@ -441,26 +502,26 @@ class ConversationMonitor(FileSystemEventHandler):
             return
 
         file_path = Path(event.src_path)
-        if file_path.suffix == '.jsonl':
+        if file_path.suffix == ".jsonl":
             print(f"\nDetected new file: {file_path.name}")
             self.process_file(file_path)
 
     def process_existing_files(self, directory: Path):
         """Process all existing JSONL files on startup."""
         print("\nProcessing existing files...")
-        for file_path in directory.glob('**/*.jsonl'):
+        for file_path in directory.glob("**/*.jsonl"):
             self.process_file(file_path)
         print("Finished processing existing files\n")
 
 
 def check_claude_skills():
     """Check if Claude Code skills are installed and prompt to install if not."""
-    skills_dir = Path.home() / '.claude' / 'skills'
+    skills_dir = Path.home() / ".claude" / "skills"
     skills_to_check = [
-        'claude-stats.md',
-        'search-conversations.md',
-        'analyze-tools.md',
-        'recent-work.md'
+        "claude-stats.md",
+        "search-conversations.md",
+        "analyze-tools.md",
+        "recent-work.md",
     ]
 
     # Check if any skills are missing
@@ -475,16 +536,16 @@ def check_claude_skills():
 
     # Check if we're in the vibe-check directory with the installer
     script_dir = Path(__file__).parent
-    installer_path = script_dir / 'claude-skills' / 'install-skills.sh'
+    installer_path = script_dir / "claude-skills" / "install-skills.sh"
 
     if not installer_path.exists():
         # Installer not available (maybe installed via package manager)
         return
 
     # Skills are missing and installer is available - prompt user
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("📚 Claude Code Skills Available!")
-    print("="*70)
+    print("=" * 70)
     print("\nVibe Check includes Claude Code skills that let you query your")
     print("conversation history using natural language!")
     print(f"\nMissing skills: {len(missing_skills)}/{len(skills_to_check)}")
@@ -493,21 +554,21 @@ def check_claude_skills():
     print("  • 'what have I been working on?' - See recent sessions")
     print("  • 'search my conversations for X' - Search history")
     print("  • 'what tools do I use most?' - Analyze tool usage")
-    print("\nWould you like to install the skills now? (y/n): ", end='', flush=True)
+    print("\nWould you like to install the skills now? (y/n): ", end="", flush=True)
 
     try:
         response = input().strip().lower()
-        if response in ['y', 'yes']:
+        if response in ["y", "yes"]:
             print("\nInstalling skills...")
             result = subprocess.run(
-                [str(installer_path)],
-                cwd=str(script_dir),
-                capture_output=False
+                [str(installer_path)], cwd=str(script_dir), capture_output=False
             )
             if result.returncode == 0:
                 print("\n✅ Skills installed successfully!")
             else:
-                print("\n⚠️  Installation had some issues. You can install manually later:")
+                print(
+                    "\n⚠️  Installation had some issues. You can install manually later:"
+                )
                 print(f"   {installer_path}")
         else:
             print("\nSkipped. You can install skills later by running:")
@@ -516,7 +577,7 @@ def check_claude_skills():
         print("\n\nSkipped. You can install skills later by running:")
         print(f"  {installer_path}")
 
-    print("="*70)
+    print("=" * 70)
     print()
 
 
@@ -524,32 +585,32 @@ def main():
     """Main entry point."""
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
-        description='Monitor Claude Code conversation files and send events to Vibe Check API'
+        description="Monitor Claude Code conversation files and send events to Vibe Check API"
     )
     parser.add_argument(
-        '--skip-backlog',
-        action='store_true',
-        help='Skip existing conversation history and start monitoring from current position'
+        "--skip-backlog",
+        action="store_true",
+        help="Skip existing conversation history and start monitoring from current position",
     )
     parser.add_argument(
-        '--skip-skills-check',
-        action='store_true',
-        help='Skip checking for Claude Code skills installation'
+        "--skip-skills-check",
+        action="store_true",
+        help="Skip checking for Claude Code skills installation",
     )
     args = parser.parse_args()
 
     # Load configuration
-    config_path = Path(__file__).parent / 'config.json'
+    config_path = Path(__file__).parent / "config.json"
     if not config_path.exists():
         print(f"Error: Configuration file not found: {config_path}")
         print("Please create config.json with your API configuration")
         sys.exit(1)
 
-    with open(config_path, 'r') as f:
+    with open(config_path, "r") as f:
         config = json.load(f)
 
     # Expand paths
-    conversation_dir = Path(config['monitor']['conversation_dir']).expanduser()
+    conversation_dir = Path(config["monitor"]["conversation_dir"]).expanduser()
 
     if not conversation_dir.exists():
         print(f"Error: Conversation directory not found: {conversation_dir}")
@@ -562,12 +623,12 @@ def main():
         check_claude_skills()
 
     # Debug filter
-    debug_filter = config['monitor'].get('debug_filter_project')
+    debug_filter = config["monitor"].get("debug_filter_project")
     if debug_filter:
         print(f"DEBUG: Only processing project: {debug_filter}")
 
     # Initialize state manager
-    state_file = Path(__file__).parent / config['monitor']['state_file']
+    state_file = Path(__file__).parent / config["monitor"]["state_file"]
     state_manager = StateManager(state_file)
 
     # Handle skip-backlog flag
@@ -576,11 +637,13 @@ def main():
 
     # Initialize SQLite manager
     sqlite_manager = None
-    if 'sqlite' in config:
-        sqlite_manager = SQLiteManager(config['sqlite'])
+    if "sqlite" in config:
+        sqlite_manager = SQLiteManager(config["sqlite"])
 
     # Initialize monitor
-    event_handler = ConversationMonitor(config['api'], state_manager, conversation_dir, sqlite_manager, debug_filter)
+    event_handler = ConversationMonitor(
+        config["api"], state_manager, conversation_dir, sqlite_manager, debug_filter
+    )
 
     # Process existing files first (unless we just skipped backlog)
     if not args.skip_backlog:
@@ -604,5 +667,5 @@ def main():
     print("Monitor stopped")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
