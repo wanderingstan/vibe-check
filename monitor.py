@@ -135,7 +135,7 @@ class SQLiteManager:
     def __init__(self, config: dict):
         """Initialize SQLite manager with configuration."""
         self.config = config
-        self.enabled = config.get("enabled", False)
+        self.enabled = config.get("enabled", True)
         self.user_name = config.get("user_name", "unknown")
         self.connection = None
         self.cursor = None
@@ -447,13 +447,17 @@ class ConversationMonitor(FileSystemEventHandler):
             print(f"  [DEBUG] Message found: {bool(message)}")
             if message and "content" in message:
                 content = message.get("content", [])
-                print(f"  [DEBUG] Content blocks: {len(content) if isinstance(content, list) else 0}")
+                print(
+                    f"  [DEBUG] Content blocks: {len(content) if isinstance(content, list) else 0}"
+                )
                 if isinstance(content, list):
                     # Check each content block
                     for i, block in enumerate(content):
                         if isinstance(block, dict) and block.get("type") == "text":
                             text = block.get("text", "")
-                            print(f"  [DEBUG] Block {i} text length: {len(text)}, preview: {text[:100]}")
+                            print(
+                                f"  [DEBUG] Block {i} text length: {len(text)}, preview: {text[:100]}"
+                            )
                             if text:
                                 # Redact if secrets found
                                 redacted_text = redact_if_secret(text)
@@ -461,9 +465,11 @@ class ConversationMonitor(FileSystemEventHandler):
                                     # Create a new content block with redacted text
                                     event_data["message"]["content"][i] = {
                                         **block,
-                                        "text": redacted_text
+                                        "text": redacted_text,
                                     }
-                                    print(f"  ⚠️  Secret detected and redacted in message")
+                                    print(
+                                        f"  ⚠️  Secret detected and redacted in message"
+                                    )
                                 else:
                                     print(f"  [DEBUG] No secrets found in block {i}")
 
