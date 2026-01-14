@@ -1,2 +1,4 @@
 watchdog>=3.0.0
 requests>=2.31.0
+detect-secrets>=1.5.0
+pymysql>=1.0.0

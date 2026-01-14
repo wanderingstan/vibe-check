@@ -7,6 +7,7 @@ sends new events to the Vibe Check API server.
 """
 
 import argparse
+import copy
 import json
 import os
 import subprocess
@@ -20,6 +21,8 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
 import sqlite3
+
+from secret_detector import redact_if_secret
 
 
 def get_git_info(directory: Path) -> Tuple[Optional[str], Optional[str]]:
@@ -421,6 +424,51 @@ class ConversationMonitor(FileSystemEventHandler):
         except Exception as e:
             print(f"Error processing {file_path}: {e}")
 
+    def redact_secrets_from_event(self, event_data: dict) -> dict:
+        """
+        Scan event data for secrets and redact them.
+
+        Args:
+            event_data: The event data dictionary
+
+        Returns:
+            Modified event data with secrets redacted
+        """
+        # Make a deep copy to avoid modifying the original
+        event_data = copy.deepcopy(event_data)
+
+        # Debug logging
+        event_type = event_data.get("type")
+        print(f"  [DEBUG] Event type: {event_type}")
+
+        # Check if this is a user or assistant message with text content
+        if event_type in ("user", "assistant", "message"):
+            message = event_data.get("message", {})
+            print(f"  [DEBUG] Message found: {bool(message)}")
+            if message and "content" in message:
+                content = message.get("content", [])
+                print(f"  [DEBUG] Content blocks: {len(content) if isinstance(content, list) else 0}")
+                if isinstance(content, list):
+                    # Check each content block
+                    for i, block in enumerate(content):
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text", "")
+                            print(f"  [DEBUG] Block {i} text length: {len(text)}, preview: {text[:100]}")
+                            if text:
+                                # Redact if secrets found
+                                redacted_text = redact_if_secret(text)
+                                if redacted_text != text:
+                                    # Create a new content block with redacted text
+                                    event_data["message"]["content"][i] = {
+                                        **block,
+                                        "text": redacted_text
+                                    }
+                                    print(f"  ⚠️  Secret detected and redacted in message")
+                                else:
+                                    print(f"  [DEBUG] No secrets found in block {i}")
+
+        return event_data
+
     def insert_event(self, filename: str, line_number: int, event_data: dict):
         """Insert an event via API and SQLite (if enabled)."""
         api_success = False
@@ -433,15 +481,18 @@ class ConversationMonitor(FileSystemEventHandler):
         if working_dir:
             git_remote_url, git_commit_hash = get_git_info(Path(working_dir))
 
-        # Try API if enabled
+        # Try API if enabled (with redaction for remote storage)
         if self.api_enabled:
             try:
+                # Create redacted version for remote API
+                redacted_event_data = self.redact_secrets_from_event(event_data)
+
                 response = self.session.post(
                     f"{self.api_endpoint}/events",
                     json={
                         "file_name": filename,
                         "line_number": line_number,
-                        "event_data": event_data,
+                        "event_data": redacted_event_data,
                         "git_remote_url": git_remote_url,
                         "git_commit_hash": git_commit_hash,
                     },
@@ -451,7 +502,7 @@ class ConversationMonitor(FileSystemEventHandler):
             except requests.RequestException as e:
                 print(f"  API error {filename}:{line_number}: {e}")
 
-        # Try SQLite if enabled
+        # Try SQLite if enabled (with original unredacted data for local storage)
         if self.sqlite_manager and self.sqlite_manager.enabled:
             sqlite_success = self.sqlite_manager.insert_event(
                 filename, line_number, event_data, git_remote_url, git_commit_hash

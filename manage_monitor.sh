@@ -14,19 +14,28 @@ case "$1" in
         ;;
 
     stop)
-        if [ -f "$PID_FILE" ]; then
-            PID=$(cat "$PID_FILE")
-            if ps -p "$PID" > /dev/null 2>&1; then
-                echo "🧜 Stopping monitor (PID: $PID)..."
-                kill "$PID"
-                rm "$PID_FILE"
-                echo "✅ Monitor stopped"
-            else
-                echo "⚠️  Monitor not running (stale PID file)"
-                rm "$PID_FILE"
+        # Kill ALL monitor.py processes, not just the one in PID file
+        RUNNING=$(pgrep -f "monitor.py" | wc -l | tr -d ' ')
+
+        if [ "$RUNNING" -gt 0 ]; then
+            echo "🧜 Stopping $RUNNING monitor process(es)..."
+            pkill -f "monitor.py"
+            sleep 1
+
+            # Check if any are still running
+            STILL_RUNNING=$(pgrep -f "monitor.py" | wc -l | tr -d ' ')
+            if [ "$STILL_RUNNING" -gt 0 ]; then
+                echo "⚠️  Force killing remaining processes..."
+                pkill -9 -f "monitor.py"
             fi
+
+            # Clean up PID file
+            [ -f "$PID_FILE" ] && rm "$PID_FILE"
+            echo "✅ All monitors stopped"
         else
-            echo "⚠️  Monitor not running (no PID file)"
+            echo "⚠️  No monitors running"
+            # Clean up stale PID file
+            [ -f "$PID_FILE" ] && rm "$PID_FILE"
         fi
         ;;
 
