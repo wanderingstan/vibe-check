@@ -9,3 +9,4 @@ monitor.log
 .monitor.pid
 *.db
 *.db-journal
+.local/

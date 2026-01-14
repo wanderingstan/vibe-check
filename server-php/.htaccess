@@ -13,3 +13,8 @@ RewriteRule ^(.*)$ api.php [QSA,L]
     Header set Access-Control-Allow-Methods "GET, POST, OPTIONS"
     Header set Access-Control-Allow-Headers "X-API-Key, Content-Type"
 </IfModule>
+
+# Deny direct access to config files
+<Files "config.json">
+    Require all denied
+</Files>
