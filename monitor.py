@@ -522,6 +522,7 @@ def check_claude_skills():
         "search-conversations.md",
         "analyze-tools.md",
         "recent-work.md",
+        "view-stats.md",
     ]
 
     # Check if any skills are missing
@@ -554,6 +555,7 @@ def check_claude_skills():
     print("  • 'what have I been working on?' - See recent sessions")
     print("  • 'search my conversations for X' - Search history")
     print("  • 'what tools do I use most?' - Analyze tool usage")
+    print("  • 'vibe stats' - Open your stats page in browser")
     print("\nWould you like to install the skills now? (y/n): ", end="", flush=True)
 
     try:

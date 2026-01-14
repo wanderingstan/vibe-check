@@ -26,15 +26,27 @@ if ($mysqli->connect_error) {
 
 $mysqli->set_charset('utf8mb4');
 
-// Get username filter from query parameter
+// Get filter parameters from query
 $filter_username = isset($_GET['user']) ? trim($_GET['user']) : null;
+$filter_git_remote_url = isset($_GET['git_remote_url']) ? trim($_GET['git_remote_url']) : null;
+$filter_event_session_id = isset($_GET['event_session_id']) ? trim($_GET['event_session_id']) : null;
 
-// Build WHERE clause for username filtering
-$where_user_filter = "";
+// Build WHERE clause for filtering
+$where_filters = [];
 if ($filter_username) {
     $escaped_username = $mysqli->real_escape_string($filter_username);
-    $where_user_filter = " AND user_name = '$escaped_username'";
+    $where_filters[] = "user_name = '$escaped_username'";
 }
+if ($filter_git_remote_url) {
+    $escaped_git_remote_url = $mysqli->real_escape_string($filter_git_remote_url);
+    $where_filters[] = "git_remote_url = '$escaped_git_remote_url'";
+}
+if ($filter_event_session_id) {
+    $escaped_event_session_id = $mysqli->real_escape_string($filter_event_session_id);
+    $where_filters[] = "event_session_id = '$escaped_event_session_id'";
+}
+
+$where_user_filter = !empty($where_filters) ? " AND " . implode(" AND ", $where_filters) : "";
 
 // Get all unique usernames for the user list
 $users_query = "
@@ -58,6 +70,8 @@ $messages_query = "
         event_type,
         event_message,
         user_name,
+        git_remote_url,
+        event_session_id,
         inserted_at
     FROM conversation_events
     WHERE event_message IS NOT NULL
@@ -77,6 +91,8 @@ while ($row = $result->fetch_assoc()) {
         'file_name' => $row['file_name'],
         'line_number' => $row['line_number'],
         'user_name' => $row['user_name'],
+        'git_remote_url' => $row['git_remote_url'],
+        'event_session_id' => $row['event_session_id'],
         'inserted_at' => $row['inserted_at']
     ];
 }
@@ -99,8 +115,8 @@ $mysqli->close();
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: #0f1419;
-            color: #e6edf3;
+            background: #252526;
+            color: #CBCBCB;
             padding: 2rem;
             line-height: 1.6;
         }
@@ -198,24 +214,18 @@ $mysqli->close();
         }
 
         .message {
-            background: #21262d;
-            border: 1px solid #30363d;
-            border-radius: 8px;
             padding: 1.5rem;
             margin-bottom: 1rem;
-            transition: border-color 0.2s;
-        }
-
-        .message:hover {
-            border-color: #6366f1;
+            transition: background-color 0.2s;
         }
 
         .message.user {
-            border-left: 4px solid #10b981;
+            background: #3C3C3C;
+            border-radius: 8px;
         }
 
         .message.assistant {
-            border-left: 4px solid #6366f1;
+            background: transparent;
         }
 
         .message-header {
@@ -256,7 +266,7 @@ $mysqli->close();
         }
 
         .message-content {
-            color: #e6edf3;
+            color: #CBCBCB;
             white-space: pre-wrap;
             word-break: break-word;
             line-height: 1.6;
@@ -315,8 +325,20 @@ $mysqli->close();
         <h1>Vibe Check Messages</h1>
         <p class="subtitle">
             <?php
+            $filter_parts = [];
             if ($filter_username) {
-                echo "Messages for <strong>@" . htmlspecialchars($filter_username) . "</strong>";
+                $filter_parts[] = "user: <strong>@" . htmlspecialchars($filter_username) . "</strong>";
+            }
+            if ($filter_git_remote_url) {
+                $repo_name = basename($filter_git_remote_url, '.git');
+                $filter_parts[] = "repo: <strong>" . htmlspecialchars($repo_name) . "</strong>";
+            }
+            if ($filter_event_session_id) {
+                $filter_parts[] = "session: <strong>" . htmlspecialchars(substr($filter_event_session_id, 0, 8)) . "</strong>";
+            }
+
+            if (!empty($filter_parts)) {
+                echo "Messages filtered by " . implode(", ", $filter_parts);
             } else {
                 echo "Recent conversation messages";
             }
@@ -359,8 +381,22 @@ $mysqli->close();
                         <div class="message-content"><?php echo htmlspecialchars($msg['content']); ?></div>
 
                         <div class="message-footer">
-                            <span>File: <?php echo htmlspecialchars($msg['file_name']); ?></span>
-                            <span>Line: <?php echo htmlspecialchars($msg['line_number']); ?></span>
+                            <?php if ($msg['git_remote_url']): ?>
+                                <span>
+                                    Repo: <a href="messages.php?git_remote_url=<?php echo urlencode($msg['git_remote_url']); ?>"
+                                             style="color: #6366f1; text-decoration: none;">
+                                        <?php echo htmlspecialchars(basename($msg['git_remote_url'], '.git')); ?>
+                                    </a>
+                                </span>
+                            <?php endif; ?>
+                            <?php if ($msg['event_session_id']): ?>
+                                <span>
+                                    Session: <a href="messages.php?event_session_id=<?php echo urlencode($msg['event_session_id']); ?>"
+                                                style="color: #6366f1; text-decoration: none;">
+                                        <?php echo htmlspecialchars(substr($msg['event_session_id'], 0, 8)); ?>
+                                    </a>
+                                </span>
+                            <?php endif; ?>
                             <span>ID: <?php echo htmlspecialchars($msg['id']); ?></span>
                         </div>
                     </div>
