@@ -260,7 +260,7 @@ if [ -d "$INSTALL_DIR" ]; then
             echo ""
             # Clean up log file on success before exec
             rm -f "$INSTALL_LOG"
-            exec "$INSTALL_DIR/start.sh" $SKIP_BACKLOG
+            exec "$INSTALL_DIR/start.sh" $SKIP_BACKLOG </dev/tty
         else
             # Clean up log file on success
             rm -f "$INSTALL_LOG"
@@ -464,7 +464,7 @@ if [[ ! $REPLY =~ ^[Nn]$ ]]; then
     echo ""
     # Clean up log file on success before exec
     rm -f "$INSTALL_LOG"
-    exec "$INSTALL_DIR/start.sh" $SKIP_BACKLOG
+    exec "$INSTALL_DIR/start.sh" $SKIP_BACKLOG </dev/tty
 else
     # Clean up log file on success
     echo -e "${BLUE}Installation log: $INSTALL_LOG (you can delete this)${NC}"
