@@ -43,7 +43,7 @@ The database file will be created automatically when the monitor starts.
 ### 2. Restart the Monitor
 
 ```bash
-./manage_monitor.sh restart
+./scripts/manage_monitor.sh restart
 ```
 
 That's it! No server installation, no credentials needed.
@@ -199,7 +199,7 @@ conn.close()
 Check the monitor logs to see SQLite status:
 
 ```bash
-./manage_monitor.sh logs
+./scripts/manage_monitor.sh logs
 ```
 
 You should see messages like:
@@ -214,8 +214,8 @@ You should see messages like:
 The database file is created automatically when the monitor starts. If you don't see it, check:
 
 1. The path in [config.json](config.json) is writable
-2. The monitor is running: `./manage_monitor.sh status`
-3. The logs for any errors: `./manage_monitor.sh logs`
+2. The monitor is running: `./scripts/manage_monitor.sh status`
+3. The logs for any errors: `./scripts/manage_monitor.sh logs`
 
 ### SQLite Errors
 
@@ -249,7 +249,7 @@ To disable SQLite recording:
 
 1. Edit [config.json](config.json)
 2. Set `"enabled": false` in the sqlite section
-3. Restart the monitor: `./manage_monitor.sh restart`
+3. Restart the monitor: `./scripts/manage_monitor.sh restart`
 
 ## Performance
 
@@ -264,9 +264,9 @@ To backup your events:
 
 ```bash
 # Simple file copy (stop monitor first)
-./manage_monitor.sh stop
+./scripts/manage_monitor.sh stop
 cp ~/Developer/vibe-check/vibe_check.db ~/Developer/vibe-check/vibe_check_backup.db
-./manage_monitor.sh start
+./scripts/manage_monitor.sh start
 
 # Or use SQLite backup command (can run while monitor is running)
 sqlite3 ~/Developer/vibe-check/vibe_check.db ".backup ~/Developer/vibe-check/vibe_check_backup.db"
@@ -275,9 +275,9 @@ sqlite3 ~/Developer/vibe-check/vibe_check.db ".backup ~/Developer/vibe-check/vib
 To restore from backup:
 
 ```bash
-./manage_monitor.sh stop
+./scripts/manage_monitor.sh stop
 cp ~/Developer/vibe-check/vibe_check_backup.db ~/Developer/vibe-check/vibe_check.db
-./manage_monitor.sh start
+./scripts/manage_monitor.sh start
 ```
 
 ## Advanced Usage
@@ -337,7 +337,7 @@ If you have an existing database with an older schema, use the migration script:
 
 ```bash
 # IMPORTANT: Stop the monitor first (otherwise database will be locked)
-./manage_monitor.sh stop
+./scripts/manage_monitor.sh stop
 
 # Backup your database
 cp ~/Developer/vibe-check/vibe_check.db ~/Developer/vibe-check/vibe_check_backup_$(date +%Y%m%d).db
@@ -346,7 +346,7 @@ cp ~/Developer/vibe-check/vibe_check.db ~/Developer/vibe-check/vibe_check_backup
 sqlite3 ~/Developer/vibe-check/vibe_check.db < migrate_sqlite.sql
 
 # Restart the monitor
-./manage_monitor.sh start
+./scripts/manage_monitor.sh start
 ```
 
 The migration script ([migrate_sqlite.sql](migrate_sqlite.sql)) will:
@@ -360,7 +360,7 @@ Or simply delete the old database and start fresh:
 
 ```bash
 rm ~/Developer/vibe-check/vibe_check.db
-./manage_monitor.sh restart
+./scripts/manage_monitor.sh restart
 ```
 
 ## Advantages Over MySQL

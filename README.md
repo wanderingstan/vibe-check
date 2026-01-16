@@ -159,13 +159,13 @@ To ensure the monitor stays running continuously, you can use the included monit
 The `manage_monitor.sh` script provides easy control over the monitor process:
 
 ```bash
-./manage_monitor.sh start         # Start the monitor
-./manage_monitor.sh stop          # Stop the monitor
-./manage_monitor.sh restart       # Restart the monitor
-./manage_monitor.sh status        # Check if monitor is running
-./manage_monitor.sh logs          # View recent logs
-./manage_monitor.sh install-cron  # Install automatic checking (every 15 min)
-./manage_monitor.sh uninstall-cron # Remove automatic checking
+./scripts/manage_monitor.sh start         # Start the monitor
+./scripts/manage_monitor.sh stop          # Stop the monitor
+./scripts/manage_monitor.sh restart       # Restart the monitor
+./scripts/manage_monitor.sh status        # Check if monitor is running
+./scripts/manage_monitor.sh logs          # View recent logs
+./scripts/manage_monitor.sh install-cron  # Install automatic checking (every 15 min)
+./scripts/manage_monitor.sh uninstall-cron # Remove automatic checking
 ```
 
 ### Automatic Monitoring with Cron
@@ -174,7 +174,7 @@ To have the system automatically restart the monitor if it stops:
 
 1. Install the cron job:
 ```bash
-./manage_monitor.sh install-cron
+./scripts/manage_monitor.sh install-cron
 ```
 
 This will check every 15 minutes if the monitor is running and restart it if needed.
@@ -192,7 +192,7 @@ This will check every 15 minutes if the monitor is running and restart it if nee
 
 ```bash
 # View both monitoring logs and monitor output
-./manage_monitor.sh logs
+./scripts/manage_monitor.sh logs
 
 # Or view individually
 tail -f ~/logs/vibe_check_monitor.log  # Monitoring activity
@@ -215,7 +215,7 @@ See [server-php/README.md](server-php/README.md) for server installation and con
 ## Files
 
 - `monitor.py` - Main monitoring client script
-- `manage_monitor.sh` - Management script for starting/stopping monitor and installing cron job
+- `scripts/manage_monitor.sh` - Management script for starting/stopping monitor and installing cron job
 - `config.json` - API credentials and settings
 - `state.json` - Auto-generated state tracking (last processed line per file)
 - `.monitor.pid` - Auto-generated PID file (tracks running monitor process)
@@ -250,7 +250,7 @@ Query your local database directly:
 
 ```bash
 # Using the helper script (handles read-only mode)
-./query-helper.sh ~/Developer/vibe-check/vibe_check.db "SELECT COUNT(*) FROM conversation_events"
+./scripts/query-helper.sh ~/Developer/vibe-check/vibe_check.db "SELECT COUNT(*) FROM conversation_events"
 
 # Or use sqlite3 directly
 sqlite3 "file:~/Developer/vibe-check/vibe_check.db?mode=ro" "SELECT * FROM conversation_events LIMIT 10"

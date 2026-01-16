@@ -28,23 +28,23 @@ The `monitor.py` script automatically scans all new messages for secrets before 
 
 ### Retroactive Scanning
 
-Use the `scan_and_redact_secrets.py` script to scan your existing database:
+Use the `scripts/scan_and_redact_secrets.py` script to scan your existing database:
 
 ```bash
 # Activate virtual environment
 source venv/bin/activate
 
 # Dry run (shows what would be changed without making changes)
-python scan_and_redact_secrets.py --dry-run
+python scripts/scan_and_redact_secrets.py --dry-run
 
 # Actually redact secrets (makes changes to the database)
-python scan_and_redact_secrets.py
+python scripts/scan_and_redact_secrets.py
 
 # Scan only the first 100 records
-python scan_and_redact_secrets.py --dry-run --limit 100
+python scripts/scan_and_redact_secrets.py --dry-run --limit 100
 
 # Use a different config file
-python scan_and_redact_secrets.py --config /path/to/config.json
+python scripts/scan_and_redact_secrets.py --config /path/to/config.json
 ```
 
 **IMPORTANT**: Always run with `--dry-run` first to see what would be changed!
@@ -90,7 +90,7 @@ This runs built-in tests on sample text containing secrets.
 ## Files
 
 - `secret_detector.py` - Core secret detection library
-- `scan_and_redact_secrets.py` - Retroactive database scanner
+- `scripts/scan_and_redact_secrets.py` - Retroactive database scanner
 - `monitor.py` - Modified to include real-time secret detection
 
 ## Security Notes
@@ -102,7 +102,7 @@ This runs built-in tests on sample text containing secrets.
 
 ## Best Practices
 
-1. Run `scan_and_redact_secrets.py --dry-run` regularly to check for secrets
+1. Run `scripts/scan_and_redact_secrets.py --dry-run` regularly to check for secrets
 2. Review the dry-run output to verify detections are accurate
 3. Keep your `detect-secrets` library updated: `pip install --upgrade detect-secrets`
 4. Consider rotating any secrets that were accidentally committed

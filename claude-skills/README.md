@@ -159,7 +159,7 @@ rm -rf ~/.claude/skills
 **"Database not found"**
 - Ensure vibe-check monitor is installed
 - Check database exists at expected location
-- Run `./query-helper.sh` to test access
+- Run `./scripts/query-helper.sh` to test access
 
 **"Database is locked"**
 - Skills use read-only mode to avoid this
