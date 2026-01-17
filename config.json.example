@@ -1,0 +1,16 @@
+{
+  "api": {
+    "enabled": false,
+    "url": "https://your-server.com",
+    "api_key": "your-api-key-here"
+  },
+  "sqlite": {
+    "enabled": true,
+    "database_path": "~/path/to/vibe-check/data/vibe_check.db",
+    "user_name": "your-username"
+  },
+  "monitor": {
+    "conversation_dir": "~/.claude/projects",
+    "state_file": "state.json"
+  }
+}

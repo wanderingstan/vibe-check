@@ -671,19 +671,25 @@ def check_claude_skills():
     print()
 
 
+def get_data_dir() -> Path:
+    """Get the data directory path.
+
+    For Homebrew installations: uses VIBE_CHECK_HOME environment variable
+    For manual installations: uses <script_dir>/data/
+    """
+    if "VIBE_CHECK_HOME" in os.environ:
+        return Path(os.environ["VIBE_CHECK_HOME"])
+    return Path(__file__).parent / "data"
+
+
 def get_pid_file() -> Path:
     """Get the path to the PID file."""
-    # Use VIBE_CHECK_HOME if set (for Homebrew), otherwise use script directory
-    if "VIBE_CHECK_HOME" in os.environ:
-        return Path(os.environ["VIBE_CHECK_HOME"]) / ".monitor.pid"
-    return Path(__file__).parent / ".monitor.pid"
+    return get_data_dir() / ".monitor.pid"
 
 
 def get_log_file() -> Path:
     """Get the path to the log file."""
-    if "VIBE_CHECK_HOME" in os.environ:
-        return Path(os.environ["VIBE_CHECK_HOME"]) / "monitor.log"
-    return Path(__file__).parent / "monitor.log"
+    return get_data_dir() / "monitor.log"
 
 
 def is_running() -> Optional[int]:
@@ -870,25 +876,12 @@ def cmd_restart(args):
 
 def get_config_path() -> Path:
     """Get the path to the config file."""
-    if "VIBE_CHECK_HOME" in os.environ:
-        return Path(os.environ["VIBE_CHECK_HOME"]) / "config.json"
-    return Path(__file__).parent / "config.json"
+    return get_data_dir() / "config.json"
 
 
 def get_state_file_path() -> Path:
     """Get the path to the state file."""
-    if "VIBE_CHECK_HOME" in os.environ:
-        return Path(os.environ["VIBE_CHECK_HOME"]) / "state.json"
-    # Try to read from config, fall back to default
-    config_path = get_config_path()
-    if config_path.exists():
-        try:
-            with open(config_path, "r") as f:
-                config = json.load(f)
-            return Path(__file__).parent / config["monitor"]["state_file"]
-        except (json.JSONDecodeError, KeyError):
-            pass
-    return Path(__file__).parent / "state.json"
+    return get_data_dir() / "state.json"
 
 
 def get_sqlite_db_path() -> Optional[Path]:
@@ -1012,14 +1005,17 @@ def run_monitor(args):
     if not logger.handlers:
         setup_logging()
 
+    # Ensure data directory exists
+    data_dir = get_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+
     # Load configuration
-    config_path = Path(__file__).parent / "config.json"
-    if "VIBE_CHECK_HOME" in os.environ:
-        config_path = Path(os.environ["VIBE_CHECK_HOME"]) / "config.json"
+    config_path = get_config_path()
 
     if not config_path.exists():
         logger.error(f"Configuration file not found: {config_path}")
-        logger.error("Please create config.json with your API configuration")
+        logger.error("Please create config.json in the data directory")
+        logger.error(f"Expected location: {config_path}")
         sys.exit(1)
 
     with open(config_path, "r") as f:
@@ -1044,10 +1040,7 @@ def run_monitor(args):
         logger.debug(f"Only processing project: {debug_filter}")
 
     # Initialize state manager
-    state_file = Path(__file__).parent / config["monitor"]["state_file"]
-    if "VIBE_CHECK_HOME" in os.environ:
-        state_file = Path(os.environ["VIBE_CHECK_HOME"]) / "state.json"
-
+    state_file = str(get_state_file_path())
     state_manager = StateManager(state_file)
 
     # Handle skip-backlog flag

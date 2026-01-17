@@ -1,12 +1,17 @@
 venv/
-state.json
-config.json
-server/config.json
 __pycache__/
 *.pyc
 .DS_Store
-monitor.log
-.monitor.pid
 *.db
 *.db-journal
 .local/
+
+# Data directory (all runtime data)
+data/
+
+# Legacy locations (before data/ directory)
+state.json
+config.json
+monitor.log
+.monitor.pid
+server/config.json

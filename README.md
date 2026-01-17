@@ -126,32 +126,50 @@ pip install -r requirements.txt
 
 ### 2. Configure
 
-Edit `config.json` with your API details and monitoring settings:
+Create a `data/` directory and copy the example config:
+
+```bash
+mkdir -p data
+cp config.json.example data/config.json
+```
+
+Edit `data/config.json` with your settings:
 
 ```json
 {
   "api": {
-    "url": "https://vibecheck.wanderingstan.com",
+    "enabled": false,
+    "url": "https://your-server.com",
     "api_key": "your-api-key-here"
+  },
+  "sqlite": {
+    "enabled": true,
+    "database_path": "~/path/to/vibe-check/data/vibe_check.db",
+    "user_name": "your-username"
   },
   "monitor": {
     "conversation_dir": "~/.claude/projects",
-    "state_file": "state.json",
-    "debug_filter_project": "-Users-yourname-Developer-vibe-check"
+    "state_file": "state.json"
   }
 }
 ```
 
-**API Settings:**
+**API Settings** (optional remote sync):
 
+- `enabled` - Set to `true` to sync to a remote server
 - `url` - The server endpoint URL
 - `api_key` - Your API key (get from server administrator)
+
+**SQLite Settings** (local database):
+
+- `enabled` - Set to `true` for local database storage (recommended)
+- `database_path` - Path to SQLite database file
+- `user_name` - Your username for tagging events
 
 **Monitor Settings:**
 
 - `conversation_dir` - Directory to watch for Claude Code conversation files (default: `~/.claude/projects`)
-- `state_file` - File to store processing state (default: `state.json`)
-- `debug_filter_project` - (Optional) Project path to montior exclusively, useful when testing.
+- `state_file` - File to store processing state (stored in data/ directory)
 
 ### 3. Run
 
@@ -272,15 +290,17 @@ When running via `brew services`, additional logs go to:
 
 ### Manual/Curl Installation
 
-All data lives in the installation directory (e.g., `~/.vibe-check` for curl install):
+All data lives in the `data/` subdirectory of the installation (e.g., `~/.vibe-check/data/`):
 
 | File | Path |
 |------|------|
-| **Database** | `<install_dir>/vibe_check.db` |
-| **Config** | `<install_dir>/config.json` |
-| **State** | `<install_dir>/state.json` |
-| **PID file** | `<install_dir>/.monitor.pid` |
-| **Log file** | `<install_dir>/monitor.log` |
+| **Database** | `<install_dir>/data/vibe_check.db` |
+| **Config** | `<install_dir>/data/config.json` |
+| **State** | `<install_dir>/data/state.json` |
+| **PID file** | `<install_dir>/data/.monitor.pid` |
+| **Log file** | `<install_dir>/data/monitor.log` |
+
+This keeps data files separate from source code and documentation.
 
 ### Querying Database Location
 
