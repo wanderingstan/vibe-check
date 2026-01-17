@@ -1207,6 +1207,11 @@ Examples:
         action="store_true",
         help="Skip checking for Claude Code skills installation",
     )
+    parser.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Run monitor in foreground (no interactive prompt)",
+    )
 
     # Create subparsers
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -1252,6 +1257,9 @@ Examples:
     # If a subcommand was specified, run it
     if hasattr(args, "func"):
         args.func(args)
+    elif args.foreground:
+        # --foreground flag: run monitor directly without prompting
+        run_monitor(args)
     else:
         # No subcommand - check if already running
         pid = is_running()

@@ -145,7 +145,7 @@ class VibeCheck < Formula
   end
 
   service do
-    run [opt_bin/"vibe-check", "--skip-skills-check"]
+    run [opt_bin/"vibe-check", "--foreground", "--skip-skills-check"]
     working_dir var/"vibe-check"
     keep_alive true
     log_path var/"log/vibe-check.log"
