@@ -1052,13 +1052,6 @@ def cmd_status(args):
     else:
         print(f"   Log:      {log_path} (not created yet)")
 
-    # State (now stored in SQLite database)
-    state_path = get_state_file_path()
-    if state_path.exists():
-        print(f"   State:    {state_path} (legacy, will migrate to DB)")
-    else:
-        print(f"   State:    stored in SQLite database")
-
     # PID file
     pid_path = get_pid_file()
     if pid_path.exists():
