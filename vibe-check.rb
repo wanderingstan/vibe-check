@@ -3,8 +3,8 @@ class VibeCheck < Formula
 
   desc "Claude Code conversation monitoring and analytics"
   homepage "https://github.com/wanderingstan/vibe-check"
-  url "https://github.com/wanderingstan/vibe-check/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "REPLACE_WITH_SHA256_AFTER_PUSHING_TAG"
+  url "https://github.com/wanderingstan/vibe-check/archive/refs/tags/v1.0.2.tar.gz"
+  sha256 "7ffd85f77235f6369fa0913d9b0199b08b2cfdb93a460631431df42b286a393f"
   license "MIT"
   head "https://github.com/wanderingstan/vibe-check.git", branch: "main"
 
@@ -131,6 +131,9 @@ class VibeCheck < Formula
     end
 
     ohai "Installed Claude Code skills to ~/.claude/skills/"
+
+    # Remind user to start the service
+    opoo "Run 'brew services start vibe-check' to enable auto-start on boot!"
   end
 
   service do
@@ -155,20 +158,18 @@ class VibeCheck < Formula
 
   def caveats
     <<~EOS
+      🧜 To enable vibe-check to auto-start on boot, run:
+        brew services start vibe-check
+
       Configuration: #{var}/vibe-check/config.json
       Database: #{var}/vibe-check/vibe_check.db
       Skills: ~/.claude/skills/
 
-      Daemon Management (choose one):
-        vibe-check start           # Built-in daemon (recommended)
-        brew services start vibe-check  # Or use Homebrew services
-
-      Other commands:
-        vibe-check status          # Check if running
-        vibe-check stop            # Stop daemon
-        vibe-check restart         # Restart daemon
-        vibe-check logs            # View logs
-        vibe-check --skip-backlog  # Run foreground, skip backlog
+      Commands:
+        brew services start vibe-check  # Enable auto-start on boot
+        brew services stop vibe-check   # Stop and disable auto-start
+        vibe-check status               # Check if running
+        vibe-check logs                 # View logs
 
       Query your conversations:
         vibe-check-query "SELECT COUNT(*) FROM conversation_events"
