@@ -93,6 +93,15 @@ class VibeCheck < Formula
   end
 
   def post_install
+    # Check if Claude Code is installed
+    claude_projects = "#{Dir.home}/.claude/projects"
+    unless Dir.exist?(claude_projects)
+      opoo "Claude Code does not appear to be installed!"
+      opoo "Vibe Check monitors Claude Code conversations, so it won't work without Claude Code."
+      opoo "Install Claude Code from: https://code.claude.com/docs/en/overview"
+      opoo "Then run Claude Code at least once before starting vibe-check."
+    end
+
     # Create default config if doesn't exist
     config_file = var/"vibe-check/config.json"
     unless config_file.exist?
@@ -157,7 +166,18 @@ class VibeCheck < Formula
   end
 
   def caveats
-    <<~EOS
+    s = ""
+    claude_projects = "#{Dir.home}/.claude/projects"
+    unless Dir.exist?(claude_projects)
+      s += <<~WARN
+        ⚠️  Claude Code not detected!
+        Vibe Check monitors Claude Code conversations - install Claude Code first:
+          https://code.claude.com/docs/en/overview
+        Run Claude Code at least once, then start vibe-check.
+
+      WARN
+    end
+    s += <<~EOS
       🧜 To enable vibe-check to auto-start on boot, run:
         brew services start vibe-check
 
@@ -186,5 +206,6 @@ class VibeCheck < Formula
           "api.api_key": "your-key"
         Then: vibe-check restart
     EOS
+    s
   end
 end
