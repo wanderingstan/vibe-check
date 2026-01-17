@@ -2,9 +2,33 @@
 
 Monitors Claude Code conversation files and sends events to the Vibe Check API server for storage.
 
-## Quick Install
+## Installation
 
-The easiest way to get started:
+### Homebrew (Recommended)
+
+The easiest way to install on macOS:
+
+```bash
+brew install wanderingstan/vibe-check/vibe-check
+vibe-check start
+```
+
+This will:
+- Install vibe-check with all dependencies
+- Automatically install Claude Code skills to `~/.claude/skills/`
+- Set up local SQLite database for your conversations
+- Start monitoring your Claude Code conversations in the background
+
+Then manage it with simple commands:
+```bash
+vibe-check status    # Check if running
+vibe-check logs      # View logs
+vibe-check restart   # Restart
+```
+
+### Quick Install (Alternative)
+
+Install via curl script:
 
 ```bash
 curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
@@ -150,34 +174,44 @@ If you want to skip the skills installation prompt (e.g., in automated setups):
 python monitor.py --skip-skills-check
 ```
 
-## Keeping the Monitor Running
+## Daemon Management
 
-To ensure the monitor stays running continuously, you can use the included monitoring scripts:
+### With Homebrew
 
-### Management Script
-
-The `manage_monitor.sh` script provides easy control over the monitor process:
+If you installed via Homebrew, use `brew services`:
 
 ```bash
-./scripts/manage_monitor.sh start         # Start the monitor
-./scripts/manage_monitor.sh stop          # Stop the monitor
-./scripts/manage_monitor.sh restart       # Restart the monitor
-./scripts/manage_monitor.sh status        # Check if monitor is running
-./scripts/manage_monitor.sh logs          # View recent logs
-./scripts/manage_monitor.sh install-cron  # Install automatic checking (every 15 min)
-./scripts/manage_monitor.sh uninstall-cron # Remove automatic checking
+brew services start vibe-check    # Start in background
+brew services stop vibe-check     # Stop
+brew services restart vibe-check  # Restart
 ```
 
-### Automatic Monitoring with Cron
+Or use the built-in daemon commands:
 
-To have the system automatically restart the monitor if it stops:
-
-1. Install the cron job:
 ```bash
-./scripts/manage_monitor.sh install-cron
+vibe-check start     # Start in background
+vibe-check stop      # Stop
+vibe-check restart   # Restart
+vibe-check status    # Check status
+vibe-check logs      # View logs
 ```
 
-This will check every 15 minutes if the monitor is running and restart it if needed.
+### Manual Installation
+
+The monitor script has built-in daemon management:
+
+```bash
+python monitor.py start     # Start in background
+python monitor.py stop      # Stop
+python monitor.py restart   # Restart
+python monitor.py status    # Check if running
+python monitor.py logs      # View logs (last 50 lines)
+python monitor.py logs -n 100  # View last 100 lines
+```
+
+### Legacy Management Script
+
+The old `manage_monitor.sh` script is still available in `scripts/` for backwards compatibility, but the built-in commands are recommended.
 
 ### How It Works
 

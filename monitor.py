@@ -10,6 +10,7 @@ import argparse
 import copy
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -640,26 +641,220 @@ def check_claude_skills():
     print()
 
 
-def main():
-    """Main entry point."""
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(
-        description="Monitor Claude Code conversation files and send events to Vibe Check API"
-    )
-    parser.add_argument(
-        "--skip-backlog",
-        action="store_true",
-        help="Skip existing conversation history and start monitoring from current position",
-    )
-    parser.add_argument(
-        "--skip-skills-check",
-        action="store_true",
-        help="Skip checking for Claude Code skills installation",
-    )
-    args = parser.parse_args()
+def get_pid_file() -> Path:
+    """Get the path to the PID file."""
+    # Use VIBE_CHECK_HOME if set (for Homebrew), otherwise use script directory
+    if "VIBE_CHECK_HOME" in os.environ:
+        return Path(os.environ["VIBE_CHECK_HOME"]) / ".monitor.pid"
+    return Path(__file__).parent / ".monitor.pid"
 
+
+def get_log_file() -> Path:
+    """Get the path to the log file."""
+    if "VIBE_CHECK_HOME" in os.environ:
+        return Path(os.environ["VIBE_CHECK_HOME"]) / "monitor.log"
+    return Path(__file__).parent / "monitor.log"
+
+
+def is_running() -> Optional[int]:
+    """Check if monitor is already running. Returns PID if running, None otherwise."""
+    pid_file = get_pid_file()
+    if not pid_file.exists():
+        return None
+
+    try:
+        with open(pid_file, "r") as f:
+            pid = int(f.read().strip())
+
+        # Check if process is actually running
+        try:
+            os.kill(pid, 0)  # Signal 0 just checks if process exists
+            return pid
+        except OSError:
+            # Process doesn't exist, clean up stale PID file
+            pid_file.unlink()
+            return None
+    except (ValueError, FileNotFoundError):
+        return None
+
+
+def write_pid_file():
+    """Write current process PID to file."""
+    pid_file = get_pid_file()
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(pid_file, "w") as f:
+        f.write(str(os.getpid()))
+
+
+def remove_pid_file():
+    """Remove PID file."""
+    pid_file = get_pid_file()
+    if pid_file.exists():
+        pid_file.unlink()
+
+
+def daemonize():
+    """Daemonize the process."""
+    # Fork once
+    try:
+        pid = os.fork()
+        if pid > 0:
+            # Parent exits
+            sys.exit(0)
+    except OSError as e:
+        print(f"Fork failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Decouple from parent environment
+    os.chdir("/")
+    os.setsid()
+    os.umask(0)
+
+    # Fork again
+    try:
+        pid = os.fork()
+        if pid > 0:
+            # Parent exits
+            sys.exit(0)
+    except OSError as e:
+        print(f"Fork failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Redirect standard file descriptors
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    log_file = get_log_file()
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(log_file, "a") as f:
+        os.dup2(f.fileno(), sys.stdout.fileno())
+        os.dup2(f.fileno(), sys.stderr.fileno())
+
+    # Close stdin
+    with open("/dev/null", "r") as f:
+        os.dup2(f.fileno(), sys.stdin.fileno())
+
+
+def cmd_start(args):
+    """Start the monitor in daemon mode."""
+    pid = is_running()
+    if pid:
+        print(f"✅ Monitor is already running (PID: {pid})")
+        return
+
+    print("🧜 Starting monitor in background...")
+
+    # Daemonize the process
+    daemonize()
+
+    # Write PID file
+    write_pid_file()
+
+    # Set up signal handlers
+    def signal_handler(signum, frame):
+        print(f"\nReceived signal {signum}, stopping monitor...")
+        remove_pid_file()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+
+    # Run the monitor
+    print(f"Monitor started at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    run_monitor(args)
+
+
+def cmd_stop(args):
+    """Stop the monitor daemon."""
+    pid = is_running()
+    if not pid:
+        print("⚠️  Monitor is not running")
+        return
+
+    print(f"🧜 Stopping monitor (PID: {pid})...")
+
+    try:
+        # Send SIGTERM
+        os.kill(pid, signal.SIGTERM)
+
+        # Wait up to 5 seconds for graceful shutdown
+        for _ in range(50):
+            time.sleep(0.1)
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                # Process has exited
+                break
+        else:
+            # Still running, force kill
+            print("⚠️  Force killing monitor...")
+            os.kill(pid, signal.SIGKILL)
+            time.sleep(0.5)
+
+        remove_pid_file()
+        print("✅ Monitor stopped")
+    except OSError as e:
+        print(f"Error stopping monitor: {e}")
+        remove_pid_file()
+
+
+def cmd_restart(args):
+    """Restart the monitor daemon."""
+    cmd_stop(args)
+    time.sleep(1)
+    cmd_start(args)
+
+
+def cmd_status(args):
+    """Check monitor status."""
+    pid = is_running()
+    if pid:
+        print(f"✅ Monitor is running (PID: {pid})")
+        # Show process info if possible
+        try:
+            result = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "pid,etime,command"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                print(result.stdout)
+        except Exception:
+            pass
+    else:
+        print("⚠️  Monitor is not running")
+        sys.exit(1)
+
+
+def cmd_logs(args):
+    """View monitor logs."""
+    log_file = get_log_file()
+
+    if not log_file.exists():
+        print(f"⚠️  No log file found at {log_file}")
+        return
+
+    # Show last 50 lines
+    lines = args.lines if hasattr(args, 'lines') and args.lines else 50
+
+    try:
+        with open(log_file, "r") as f:
+            all_lines = f.readlines()
+            recent_lines = all_lines[-lines:]
+            print(f"🧜 Last {len(recent_lines)} lines of {log_file}:\n")
+            print("".join(recent_lines))
+    except Exception as e:
+        print(f"Error reading log file: {e}")
+
+
+def run_monitor(args):
+    """Run the monitor (extracted from main for daemon support)."""
     # Load configuration
     config_path = Path(__file__).parent / "config.json"
+    if "VIBE_CHECK_HOME" in os.environ:
+        config_path = Path(os.environ["VIBE_CHECK_HOME"]) / "config.json"
+
     if not config_path.exists():
         print(f"Error: Configuration file not found: {config_path}")
         print("Please create config.json with your API configuration")
@@ -688,6 +883,9 @@ def main():
 
     # Initialize state manager
     state_file = Path(__file__).parent / config["monitor"]["state_file"]
+    if "VIBE_CHECK_HOME" in os.environ:
+        state_file = Path(os.environ["VIBE_CHECK_HOME"]) / "state.json"
+
     state_manager = StateManager(state_file)
 
     # Handle skip-backlog flag
@@ -724,6 +922,82 @@ def main():
 
     observer.join()
     print("Monitor stopped")
+
+
+def main():
+    """Main entry point with subcommands."""
+    parser = argparse.ArgumentParser(
+        description="Claude Code Conversation Monitor",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Commands:
+  start         Start the monitor in background
+  stop          Stop the background monitor
+  restart       Restart the monitor
+  status        Check if monitor is running
+  logs          View monitor logs
+  (no command)  Run monitor in foreground (default)
+
+Examples:
+  vibe-check                    # Run in foreground
+  vibe-check start              # Start in background
+  vibe-check stop               # Stop background monitor
+  vibe-check status             # Check status
+  vibe-check logs               # View logs
+  vibe-check --skip-backlog     # Run foreground, skip existing conversations
+        """
+    )
+
+    # Global arguments (work with any command)
+    parser.add_argument(
+        "--skip-backlog",
+        action="store_true",
+        help="Skip existing conversation history and start monitoring from current position",
+    )
+    parser.add_argument(
+        "--skip-skills-check",
+        action="store_true",
+        help="Skip checking for Claude Code skills installation",
+    )
+
+    # Create subparsers
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+
+    # Start command
+    parser_start = subparsers.add_parser("start", help="Start monitor in background")
+    parser_start.set_defaults(func=cmd_start)
+
+    # Stop command
+    parser_stop = subparsers.add_parser("stop", help="Stop background monitor")
+    parser_stop.set_defaults(func=cmd_stop)
+
+    # Restart command
+    parser_restart = subparsers.add_parser("restart", help="Restart background monitor")
+    parser_restart.set_defaults(func=cmd_restart)
+
+    # Status command
+    parser_status = subparsers.add_parser("status", help="Check monitor status")
+    parser_status.set_defaults(func=cmd_status)
+
+    # Logs command
+    parser_logs = subparsers.add_parser("logs", help="View monitor logs")
+    parser_logs.add_argument(
+        "-n", "--lines",
+        type=int,
+        default=50,
+        help="Number of lines to show (default: 50)"
+    )
+    parser_logs.set_defaults(func=cmd_logs)
+
+    # Parse arguments
+    args = parser.parse_args()
+
+    # If a subcommand was specified, run it
+    if hasattr(args, "func"):
+        args.func(args)
+    else:
+        # No subcommand = run in foreground
+        run_monitor(args)
 
 
 if __name__ == "__main__":
