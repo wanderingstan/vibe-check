@@ -180,6 +180,21 @@ echo "║   🧜 Vibe Check Installer v1.0        ║"
 echo "╚═══════════════════════════════════════╝"
 echo -e "${NC}"
 
+# Check if Claude Code is installed
+if [ ! -d "$HOME/.claude/projects" ]; then
+    echo -e "${RED}✗ Claude Code does not appear to be installed.${NC}"
+    echo ""
+    echo -e "${YELLOW}Vibe Check monitors Claude Code conversations, so Claude Code${NC}"
+    echo -e "${YELLOW}must be installed and used at least once before installing.${NC}"
+    echo ""
+    echo -e "${BLUE}To install Claude Code:${NC}"
+    echo -e "  https://code.claude.com/docs/en/overview"
+    echo ""
+    echo -e "${BLUE}After installing, run Claude Code at least once, then re-run this installer.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ Claude Code detected${NC}"
+
 # Check if already installed
 if [ -d "$INSTALL_DIR" ]; then
     echo -e "${YELLOW}⚠ Vibe Check is already installed at $INSTALL_DIR${NC}"
