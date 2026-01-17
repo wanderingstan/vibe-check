@@ -1,23 +1,28 @@
 {
   "workbench.colorCustomizations": {
-    // Status bar - purple/pink vibe theme
-    "statusBar.background": "#7c3aed",
+    // Status bar - orange vibe theme
+    "statusBar.background": "#784030",
     "statusBar.foreground": "#ffffff",
-    "statusBar.noFolderBackground": "#7c3aed",
+    "statusBar.noFolderBackground": "#DC785D",
 
     // Title bar
-    "titleBar.activeBackground": "#6d28d9",
+    "titleBar.activeBackground": "#784030",
     "titleBar.activeForeground": "#ffffff",
-    "titleBar.inactiveBackground": "#5b21b6",
-    "titleBar.inactiveForeground": "#e9d5ff",
+    "titleBar.inactiveBackground": "#b05d45",
+    "titleBar.inactiveForeground": "#fde0d6",
 
     // Activity bar (left sidebar)
-    "activityBar.background": "#6d28d9",
+    "activityBar.background": "#784030",
     "activityBar.foreground": "#ffffff",
-    "activityBar.inactiveForeground": "#c4b5fd",
+    "activityBar.inactiveForeground": "#f4c4b5",
 
     // Accent color for highlights
-    "activityBarBadge.background": "#ec4899",
-    "activityBarBadge.foreground": "#ffffff"
+    "activityBarBadge.background": "#e85a30",
+    "activityBarBadge.foreground": "#ffffff",
+
+    // Stan
+    // "sideBar.background": "#2e1f1a",
+    // "editor.background": "#2e1f1a",
+    "sideBarSectionHeader.background": "#49271e"
   }
 }
