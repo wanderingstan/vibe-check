@@ -57,20 +57,32 @@ class VibeCheck < Formula
   end
 
   def install
-    # Create virtual environment and install dependencies
-    virtualenv_install_with_resources
+    # Create virtual environment
+    venv = virtualenv_create(libexec, "python3.12")
+
+    # Install Python dependencies (resources) into the venv
+    resources.each do |r|
+      venv.pip_install r
+    end
 
     # Copy Python modules to libexec
     libexec.install "monitor.py", "secret_detector.py"
     (libexec/"scripts").install "scripts/query-helper.sh"
 
+    # Make monitor.py executable
+    chmod 0755, libexec/"monitor.py"
+
     # Install skills to share directory
     (share/"vibe-check/skills").install Dir["claude-skills/*.md"]
 
-    # Create executable wrapper for monitor
-    (bin/"vibe-check").write_env_script libexec/"monitor.py",
-      PYTHONPATH: libexec,
-      VIBE_CHECK_HOME: var/"vibe-check"
+    # Create executable wrapper for monitor that uses venv python
+    (bin/"vibe-check").write <<~EOS
+      #!/bin/bash
+      export PYTHONPATH="#{libexec}"
+      export VIBE_CHECK_HOME="#{var}/vibe-check"
+      exec "#{libexec}/bin/python3" "#{libexec}/monitor.py" "$@"
+    EOS
+    chmod 0755, bin/"vibe-check"
 
     # Create query helper wrapper
     (bin/"vibe-check-query").write_env_script libexec/"scripts/query-helper.sh",
