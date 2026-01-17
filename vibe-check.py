@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import time
+import webbrowser
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -31,6 +32,9 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # Create module-level logger
 logger = logging.getLogger("vibe-check")
+
+# Default production API URL
+DEFAULT_API_URL = "https://vibecheck.wanderingstan.com/api"
 
 
 def setup_logging(log_file: Optional[Path] = None, verbose: bool = False):
@@ -1085,6 +1089,170 @@ def cmd_logs(args):
         print(f"Error reading log file: {e}")
 
 
+def cmd_auth_login(args):
+    """Authenticate with the vibe-check server using device flow."""
+    # Load config to get API URL
+    config_path = get_config_path()
+
+    if not config_path.exists():
+        # Use default production URL
+        api_url = DEFAULT_API_URL
+        print(f"Using default server: {api_url}")
+        # Create basic config
+        config = {
+            "api": {"enabled": True, "url": api_url, "api_key": ""},
+            "monitor": {"conversation_dir": "~/.claude/projects"},
+            "sqlite": {"enabled": True, "database_path": "~/.vibe-check/vibe_check.db"}
+        }
+    else:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        api_url = config.get("api", {}).get("url", "") or DEFAULT_API_URL
+
+    # Remove trailing /api if present for the auth endpoint base
+    auth_base = api_url.rstrip("/")
+    if auth_base.endswith("/api"):
+        auth_base = auth_base[:-4]
+
+    print(f"\n🔐 Starting authentication with {auth_base}...")
+
+    try:
+        # Start device flow
+        response = requests.post(
+            f"{auth_base}/api/cli/auth/start",
+            headers={"Content-Type": "application/json"},
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        device_code = data["device_code"]
+        user_code = data["user_code"]
+        verification_url = data["verification_url_complete"]
+        expires_in = data.get("expires_in", 600)
+        interval = data.get("interval", 5)
+
+        print(f"\n" + "=" * 50)
+        print(f"  Your code: {user_code}")
+        print(f"=" * 50)
+        print(f"\nOpening browser to: {verification_url}")
+        print(f"(Code expires in {expires_in // 60} minutes)")
+
+        # Try to open browser
+        try:
+            webbrowser.open(verification_url)
+        except Exception:
+            print(f"\n⚠️  Could not open browser automatically.")
+            print(f"   Please visit: {verification_url}")
+
+        print("\nWaiting for authorization", end="", flush=True)
+
+        # Poll for approval
+        start_time = time.time()
+        while time.time() - start_time < expires_in:
+            time.sleep(interval)
+            print(".", end="", flush=True)
+
+            try:
+                poll_response = requests.post(
+                    f"{auth_base}/api/cli/auth/poll",
+                    json={"device_code": device_code},
+                    headers={"Content-Type": "application/json"},
+                    timeout=10
+                )
+
+                if poll_response.status_code == 200:
+                    poll_data = poll_response.json()
+                    if poll_data.get("status") == "approved":
+                        api_key = poll_data.get("api_key")
+                        print("\n\n✅ Authorization successful!")
+
+                        # Save to config
+                        config["api"]["url"] = api_url
+                        config["api"]["api_key"] = api_key
+                        config["api"]["enabled"] = True
+
+                        config_path.parent.mkdir(parents=True, exist_ok=True)
+                        with open(config_path, "w") as f:
+                            json.dump(config, f, indent=2)
+
+                        print(f"   API key saved to {config_path}")
+                        print("\n🎉 You're all set! Run 'vibe-check start' to begin monitoring.")
+                        return
+
+                elif poll_response.status_code == 202:
+                    # Still pending, continue polling
+                    continue
+                else:
+                    error_data = poll_response.json()
+                    error = error_data.get("error", "Unknown error")
+                    if error in ["expired_token", "token_already_used"]:
+                        print(f"\n\n❌ {error.replace('_', ' ').title()}")
+                        return
+
+            except requests.RequestException as e:
+                # Network error during poll, continue trying
+                continue
+
+        print("\n\n❌ Authorization timed out. Please try again.")
+
+    except requests.RequestException as e:
+        print(f"\n❌ Error connecting to server: {e}")
+        sys.exit(1)
+
+
+def cmd_auth_status(args):
+    """Show current authentication status."""
+    config_path = get_config_path()
+
+    if not config_path.exists():
+        print("⚠️  Not configured. Run 'vibe-check auth login' to authenticate.")
+        return
+
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    api_config = config.get("api", {})
+    api_url = api_config.get("url", "")
+    api_key = api_config.get("api_key", "")
+    enabled = api_config.get("enabled", False)
+
+    if api_key:
+        print("✅ Authenticated")
+        print(f"   Server: {api_url}")
+        print(f"   API Key: {api_key[:8]}...{api_key[-4:]}")
+        print(f"   Remote sync: {'enabled' if enabled else 'disabled'}")
+    else:
+        print("⚠️  Not authenticated")
+        if api_url:
+            print(f"   Server: {api_url}")
+        print("\n   Run 'vibe-check auth login' to authenticate.")
+
+
+def cmd_auth_logout(args):
+    """Remove stored API key."""
+    config_path = get_config_path()
+
+    if not config_path.exists():
+        print("⚠️  No config file found. Nothing to log out from.")
+        return
+
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    if not config.get("api", {}).get("api_key"):
+        print("⚠️  Not currently authenticated.")
+        return
+
+    # Clear API key
+    config["api"]["api_key"] = ""
+
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+
+    print("✅ Logged out. API key removed from config.")
+
+
 def run_monitor(args):
     """Run the vibe-check process (extracted from main for daemon support)."""
     # Set up logging for console if not already configured (foreground mode)
@@ -1177,10 +1345,14 @@ Commands:
   restart       Restart vibe-check process
   status        Check if vibe-check process is running
   logs          View vibe-check logs
+  auth login    Authenticate with the vibe-check server
+  auth status   Show current authentication status
+  auth logout   Remove stored API key
   (no command)  Show status if running, or prompt to start
 
 Examples:
   vibe-check                    # Show status or prompt to start
+  vibe-check auth login         # Authenticate with the server
   vibe-check start              # Start in background
   vibe-check stop               # Stop background monitor
   vibe-check status             # Check status
@@ -1243,6 +1415,33 @@ Examples:
         help="Number of lines to show (default: 50)",
     )
     parser_logs.set_defaults(func=cmd_logs)
+
+    # Auth command with subcommands
+    parser_auth = subparsers.add_parser(
+        "auth", help="Authentication commands"
+    )
+    auth_subparsers = parser_auth.add_subparsers(dest="auth_command", help="Auth command")
+
+    # auth login
+    parser_auth_login = auth_subparsers.add_parser(
+        "login", help="Authenticate with the vibe-check server"
+    )
+    parser_auth_login.set_defaults(func=cmd_auth_login)
+
+    # auth status
+    parser_auth_status = auth_subparsers.add_parser(
+        "status", help="Show current authentication status"
+    )
+    parser_auth_status.set_defaults(func=cmd_auth_status)
+
+    # auth logout
+    parser_auth_logout = auth_subparsers.add_parser(
+        "logout", help="Remove stored API key"
+    )
+    parser_auth_logout.set_defaults(func=cmd_auth_logout)
+
+    # Default for 'auth' with no subcommand
+    parser_auth.set_defaults(func=cmd_auth_status)
 
     # Parse arguments
     args = parser.parse_args()
