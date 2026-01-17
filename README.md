@@ -1,6 +1,8 @@
 # 🧜 Vibe-Check Claude Code Conversation Monitor
 
-Monitors Claude Code conversation files and sends events to the Vibe Check API server for storage.
+Monitors Claude Code conversation files and backs them up to a local SQLite database, and optionally sends them to the a remote server for storage.
+
+New skills in Claude code then allow you to reference and analyze your past converstaions from within Claude!
 
 ## Installation
 
@@ -14,12 +16,14 @@ vibe-check start
 ```
 
 This will:
+
 - Install vibe-check with all dependencies
 - Automatically install Claude Code skills to `~/.claude/skills/`
 - Set up local SQLite database for your conversations
 - Start monitoring your Claude Code conversations in the background
 
 Then manage it with simple commands:
+
 ```bash
 vibe-check status    # Check if running
 vibe-check logs      # View logs
