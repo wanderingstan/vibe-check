@@ -415,8 +415,7 @@ cat > "$INSTALL_DIR/config.json" <<EOF
     "user_name": "$USERNAME"
   },
   "monitor": {
-    "conversation_dir": "~/.claude/projects",
-    "state_file": "state.json"
+    "conversation_dir": "~/.claude/projects"
   }
 }
 EOF

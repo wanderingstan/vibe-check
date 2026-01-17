@@ -148,8 +148,7 @@ Edit `data/config.json` with your settings:
     "user_name": "your-username"
   },
   "monitor": {
-    "conversation_dir": "~/.claude/projects",
-    "state_file": "state.json"
+    "conversation_dir": "~/.claude/projects"
   }
 }
 ```
@@ -169,7 +168,6 @@ Edit `data/config.json` with your settings:
 **Monitor Settings:**
 
 - `conversation_dir` - Directory to watch for Claude Code conversation files (default: `~/.claude/projects`)
-- `state_file` - File to store processing state (stored in data/ directory)
 
 ### 3. Run
 
@@ -261,7 +259,7 @@ tail -f monitor.log                     # Monitor process output
 2. Watches for file modifications/creations using OS events
 3. Parses each new JSONL line as JSON
 4. Sends events to API server with authentication
-5. Tracks progress in `state.json` to resume after restarts
+5. Tracks progress in SQLite database to resume after restarts
 6. **Prompts to install Claude Code skills** on first interactive run
 
 ## Server Setup
@@ -280,7 +278,6 @@ All data lives in `/opt/homebrew/var/vibe-check/`:
 |------|------|
 | **Database** | `/opt/homebrew/var/vibe-check/vibe_check.db` |
 | **Config** | `/opt/homebrew/var/vibe-check/config.json` |
-| **State** | `/opt/homebrew/var/vibe-check/state.json` |
 | **PID file** | `/opt/homebrew/var/vibe-check/.monitor.pid` |
 | **Log file** | `/opt/homebrew/var/vibe-check/monitor.log` |
 
@@ -296,7 +293,6 @@ All data lives in the `data/` subdirectory of the installation (e.g., `~/.vibe-c
 |------|------|
 | **Database** | `<install_dir>/data/vibe_check.db` |
 | **Config** | `<install_dir>/data/config.json` |
-| **State** | `<install_dir>/data/state.json` |
 | **PID file** | `<install_dir>/data/.monitor.pid` |
 | **Log file** | `<install_dir>/data/monitor.log` |
 
@@ -319,11 +315,10 @@ cat /opt/homebrew/var/vibe-check/config.json | grep database_path
 - `vibe-check.py` - Main monitoring client script
 - `scripts/manage_monitor.sh` - Management script for starting/stopping monitor and installing cron job
 - `config.json` - API credentials and settings
-- `state.json` - Auto-generated state tracking (last processed line per file)
 - `.monitor.pid` - Auto-generated PID file (tracks running monitor process)
 - `monitor.log` - Auto-generated output log from monitor process
 - `requirements.txt` - Python dependencies
-- `vibe_check.db` - Local SQLite database with conversation data
+- `vibe_check.db` - Local SQLite database (stores conversation data and file processing state)
 - `claude-skills/` - Claude Code skills for querying your usage
 - `server-php/` - API server code (PHP)
 - `~/Scripts/monitor_vibe_check.sh` - Cron script that checks if monitor is running

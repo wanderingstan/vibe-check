@@ -118,8 +118,7 @@ class VibeCheck < Formula
             "user_name": "#{ENV["USER"]}"
           },
           "monitor": {
-            "conversation_dir": "#{Dir.home}/.claude/projects",
-            "state_file": "#{var}/vibe-check/state.json"
+            "conversation_dir": "#{Dir.home}/.claude/projects"
           }
         }
       JSON

@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Optional, Tuple
 
 import requests
 import sqlite3
@@ -89,45 +89,103 @@ def get_git_info(directory: Path) -> Tuple[Optional[str], Optional[str]]:
 
 
 class StateManager:
-    """Manages state tracking for file processing."""
+    """Manages state tracking for file processing using SQLite."""
 
-    def __init__(self, state_file: str):
-        self.state_file = Path(state_file)
-        self.state: Dict[str, int] = {}
-        self.load()
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
+        self.connection = None
+        self.cursor = None
+        self._connect()
+        self._migrate_from_json()
 
-    def load(self):
-        """Load state from file."""
-        if self.state_file.exists():
-            try:
-                with open(self.state_file, "r") as f:
-                    self.state = json.load(f)
-                logger.info(f"Loaded state: {len(self.state)} files tracked")
-            except json.JSONDecodeError:
-                logger.warning("Could not parse state file, starting fresh")
-                self.state = {}
-        else:
-            logger.info("No state file found, starting fresh")
-            self.state = {}
+    def _connect(self):
+        """Establish SQLite connection."""
+        self.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self.cursor = self.connection.cursor()
+        # Ensure table exists (in case StateManager is created before SQLiteManager)
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversation_file_state (
+                file_name TEXT PRIMARY KEY,
+                last_line INTEGER NOT NULL DEFAULT 0,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        )
+        self.connection.commit()
+        # Log count of tracked files
+        self.cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
+        count = self.cursor.fetchone()[0]
+        logger.info(f"StateManager connected: {count} files tracked")
 
-    def save(self):
-        """Save state to file."""
-        with open(self.state_file, "w") as f:
-            json.dump(self.state, f, indent=2)
+    def _migrate_from_json(self):
+        """Migrate data from legacy state.json if it exists."""
+        legacy_state_file = self.db_path.parent / "state.json"
+        if not legacy_state_file.exists():
+            return
+
+        try:
+            with open(legacy_state_file, "r") as f:
+                legacy_state = json.load(f)
+
+            if not legacy_state:
+                return
+
+            # Check if we've already migrated (table has data)
+            self.cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
+            if self.cursor.fetchone()[0] > 0:
+                logger.debug("State already migrated, skipping JSON import")
+                return
+
+            logger.info(f"Migrating {len(legacy_state)} entries from state.json...")
+            for filename, last_line in legacy_state.items():
+                self.cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO conversation_file_state (file_name, last_line)
+                    VALUES (?, ?)
+                """,
+                    (filename, last_line),
+                )
+            self.connection.commit()
+            logger.info("Migration complete")
+
+            # Rename old file as backup
+            backup_path = legacy_state_file.with_suffix(".json.bak")
+            legacy_state_file.rename(backup_path)
+            logger.info(f"Legacy state.json backed up to {backup_path}")
+
+        except (json.JSONDecodeError, IOError) as e:
+            logger.warning(f"Could not migrate from state.json: {e}")
 
     def get_last_line(self, filename: str) -> int:
         """Get the last processed line number for a file."""
-        return self.state.get(filename, 0)
+        self.cursor.execute(
+            "SELECT last_line FROM conversation_file_state WHERE file_name = ?",
+            (filename,),
+        )
+        row = self.cursor.fetchone()
+        return row[0] if row else 0
 
     def set_last_line(self, filename: str, line_number: int):
         """Set the last processed line number for a file."""
-        self.state[filename] = line_number
-        self.save()
+        self.cursor.execute(
+            """
+            INSERT INTO conversation_file_state (file_name, last_line, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(file_name) DO UPDATE SET
+                last_line = excluded.last_line,
+                updated_at = CURRENT_TIMESTAMP
+        """,
+            (filename, line_number),
+        )
+        self.connection.commit()
 
     def skip_to_end(self, directory: Path, debug_filter_project: Optional[str] = None):
         """Fast-forward state to the end of all existing files without processing."""
         logger.info("Skipping backlog - fast-forwarding to current position...")
         count = 0
+        updates = []
+
         for file_path in directory.glob("**/*.jsonl"):
             if not file_path.exists():
                 continue
@@ -149,15 +207,39 @@ class StateManager:
                     line_count = sum(1 for _ in f)
 
                 if line_count > 0:
-                    self.set_last_line(filename, line_count)
+                    updates.append((filename, line_count))
                     logger.debug(f"Skipped {line_count} lines in {filename}")
                     count += 1
             except Exception as e:
                 logger.error(f"Error reading {filename}: {e}")
 
+        # Batch insert/update all at once for efficiency
+        if updates:
+            self.cursor.executemany(
+                """
+                INSERT INTO conversation_file_state (file_name, last_line, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(file_name) DO UPDATE SET
+                    last_line = excluded.last_line,
+                    updated_at = CURRENT_TIMESTAMP
+            """,
+                updates,
+            )
+            self.connection.commit()
+
         logger.info(
             f"Fast-forwarded {count} file(s). Monitoring will start from current position."
         )
+
+    def get_file_count(self) -> int:
+        """Get the number of tracked conversation files."""
+        self.cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
+        return self.cursor.fetchone()[0]
+
+    def close(self):
+        """Close the database connection."""
+        if self.connection:
+            self.connection.close()
 
 
 class SQLiteManager:
@@ -275,6 +357,17 @@ class SQLiteManager:
         self.cursor.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_git_commit_hash ON conversation_events(git_commit_hash)
+        """
+        )
+
+        # Create conversation_file_state table for tracking processed lines
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversation_file_state (
+                file_name TEXT PRIMARY KEY,
+                last_line INTEGER NOT NULL DEFAULT 0,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
         """
         )
 
@@ -959,12 +1052,12 @@ def cmd_status(args):
     else:
         print(f"   Log:      {log_path} (not created yet)")
 
-    # State file
+    # State (now stored in SQLite database)
     state_path = get_state_file_path()
     if state_path.exists():
-        print(f"   State:    {state_path}")
+        print(f"   State:    {state_path} (legacy, will migrate to DB)")
     else:
-        print(f"   State:    {state_path} (not created yet)")
+        print(f"   State:    stored in SQLite database")
 
     # PID file
     pid_path = get_pid_file()
@@ -1039,9 +1132,9 @@ def run_monitor(args):
     if debug_filter:
         logger.debug(f"Only processing project: {debug_filter}")
 
-    # Initialize state manager
-    state_file = str(get_state_file_path())
-    state_manager = StateManager(state_file)
+    # Initialize state manager (uses SQLite database)
+    db_path = get_data_dir() / "vibe_check.db"
+    state_manager = StateManager(db_path)
 
     # Handle skip-backlog flag
     if args.skip_backlog:

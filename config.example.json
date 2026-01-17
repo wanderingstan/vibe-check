@@ -9,7 +9,6 @@
   },
   "monitor": {
     "conversation_dir": "~/.claude/projects",
-    "state_file": "state.json",
     "XX_debug_filter_project": ""
   }
 }

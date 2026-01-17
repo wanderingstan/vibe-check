@@ -10,7 +10,6 @@
     "user_name": "your-username"
   },
   "monitor": {
-    "conversation_dir": "~/.claude/projects",
-    "state_file": "state.json"
+    "conversation_dir": "~/.claude/projects"
   }
 }
