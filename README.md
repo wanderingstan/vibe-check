@@ -250,6 +250,50 @@ tail -f monitor.log                     # Monitor process output
 
 See [server-php/README.md](server-php/README.md) for server installation and configuration.
 
+## Data Locations
+
+Data files are stored in different locations depending on your installation method:
+
+### Homebrew Installation
+
+All data lives in `/opt/homebrew/var/vibe-check/`:
+
+| File | Path |
+|------|------|
+| **Database** | `/opt/homebrew/var/vibe-check/vibe_check.db` |
+| **Config** | `/opt/homebrew/var/vibe-check/config.json` |
+| **State** | `/opt/homebrew/var/vibe-check/state.json` |
+| **PID file** | `/opt/homebrew/var/vibe-check/.monitor.pid` |
+| **Log file** | `/opt/homebrew/var/vibe-check/monitor.log` |
+
+When running via `brew services`, additional logs go to:
+- `/opt/homebrew/var/log/vibe-check.log`
+- `/opt/homebrew/var/log/vibe-check.error.log`
+
+### Manual/Curl Installation
+
+All data lives in the installation directory (e.g., `~/.vibe-check` for curl install):
+
+| File | Path |
+|------|------|
+| **Database** | `<install_dir>/vibe_check.db` |
+| **Config** | `<install_dir>/config.json` |
+| **State** | `<install_dir>/state.json` |
+| **PID file** | `<install_dir>/.monitor.pid` |
+| **Log file** | `<install_dir>/monitor.log` |
+
+### Querying Database Location
+
+To find your database programmatically:
+
+```bash
+# Homebrew installation
+echo $VIBE_CHECK_DB   # Set by vibe-check-query wrapper
+
+# Or check config.json
+cat /opt/homebrew/var/vibe-check/config.json | grep database_path
+```
+
 ## Files
 
 - `vibe-check.py` - Main monitoring client script
