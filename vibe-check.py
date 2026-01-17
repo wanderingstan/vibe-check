@@ -9,6 +9,7 @@ sends new events to the Vibe Check API server.
 import argparse
 import copy
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -18,12 +19,41 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import requests
+import sqlite3
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 
-import sqlite3
-
 from secret_detector import redact_if_secret
+
+# Configure logging with timestamp format
+LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+# Create module-level logger
+logger = logging.getLogger("vibe-check")
+
+
+def setup_logging(log_file: Optional[Path] = None, verbose: bool = False):
+    """Configure logging with optional file output."""
+    level = logging.DEBUG if verbose else logging.INFO
+
+    # Clear any existing handlers
+    logger.handlers.clear()
+    logger.setLevel(level)
+
+    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+
+    if log_file:
+        # File handler for daemon mode
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    else:
+        # Console handler for interactive mode
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
 
 
 def get_git_info(directory: Path) -> Tuple[Optional[str], Optional[str]]:
@@ -72,12 +102,12 @@ class StateManager:
             try:
                 with open(self.state_file, "r") as f:
                     self.state = json.load(f)
-                print(f"Loaded state: {len(self.state)} files tracked")
+                logger.info(f"Loaded state: {len(self.state)} files tracked")
             except json.JSONDecodeError:
-                print("Warning: Could not parse state file, starting fresh")
+                logger.warning("Could not parse state file, starting fresh")
                 self.state = {}
         else:
-            print("No state file found, starting fresh")
+            logger.info("No state file found, starting fresh")
             self.state = {}
 
     def save(self):
@@ -96,7 +126,7 @@ class StateManager:
 
     def skip_to_end(self, directory: Path, debug_filter_project: Optional[str] = None):
         """Fast-forward state to the end of all existing files without processing."""
-        print("\nSkipping backlog - fast-forwarding to current position...")
+        logger.info("Skipping backlog - fast-forwarding to current position...")
         count = 0
         for file_path in directory.glob("**/*.jsonl"):
             if not file_path.exists():
@@ -120,13 +150,13 @@ class StateManager:
 
                 if line_count > 0:
                     self.set_last_line(filename, line_count)
-                    print(f"  Skipped {line_count} lines in {filename}")
+                    logger.debug(f"Skipped {line_count} lines in {filename}")
                     count += 1
             except Exception as e:
-                print(f"  Error reading {filename}: {e}")
+                logger.error(f"Error reading {filename}: {e}")
 
-        print(
-            f"Fast-forwarded {count} file(s). Monitoring will start from current position.\n"
+        logger.info(
+            f"Fast-forwarded {count} file(s). Monitoring will start from current position."
         )
 
 
@@ -143,7 +173,7 @@ class SQLiteManager:
         self.db_path = None
 
         if not self.enabled:
-            print("SQLite recording is disabled")
+            logger.info("SQLite recording is disabled")
             return
 
         try:
@@ -153,10 +183,10 @@ class SQLiteManager:
 
             self.connect()
             self.create_schema()
-            print(f"Connected to SQLite database: {self.db_path}")
+            logger.info(f"Connected to SQLite database: {self.db_path}")
         except Exception as e:
-            print(f"Error initializing SQLite: {e}")
-            print(
+            logger.error(f"Error initializing SQLite: {e}")
+            logger.warning(
                 "SQLite recording will be disabled. Events will still be sent to API."
             )
             self.enabled = False
@@ -288,7 +318,7 @@ class SQLiteManager:
             return True
 
         except sqlite3.Error as e:
-            print(f"SQLite error: {e}")
+            logger.error(f"SQLite error: {e}")
             return False
 
     def close(self):
@@ -338,7 +368,7 @@ class ConversationMonitor(FileSystemEventHandler):
         if self.api_enabled:
             self.test_connection()
         else:
-            print("Remote API recording is disabled")
+            logger.info("Remote API recording is disabled")
 
     def test_connection(self):
         """Test API connection."""
@@ -346,7 +376,7 @@ class ConversationMonitor(FileSystemEventHandler):
             # Try the configured URL first
             response = self.session.get(f"{self.api_endpoint}/health")
             response.raise_for_status()
-            print(f"Connected to API server: {self.api_endpoint}")
+            logger.info(f"Connected to API server: {self.api_endpoint}")
         except requests.RequestException as e:
             # If that fails and URL doesn't already have api.php, try adding it
             if "/api.php" not in self.api_endpoint:
@@ -354,12 +384,12 @@ class ConversationMonitor(FileSystemEventHandler):
                     self.api_endpoint = f"{self.api_url}/api.php"
                     response = self.session.get(f"{self.api_endpoint}/health")
                     response.raise_for_status()
-                    print(f"Connected to API server: {self.api_endpoint}")
+                    logger.info(f"Connected to API server: {self.api_endpoint}")
                     return
                 except requests.RequestException:
                     pass
 
-            print(f"Error connecting to API: {e}")
+            logger.error(f"Error connecting to API: {e}")
             sys.exit(1)
 
     def process_file(self, file_path: Path):
@@ -394,7 +424,7 @@ class ConversationMonitor(FileSystemEventHandler):
             if not new_lines:
                 return
 
-            print(f"Processing {len(new_lines)} new line(s) from {filename}")
+            logger.info(f"Processing {len(new_lines)} new line(s) from {filename}")
 
             for idx, line in enumerate(new_lines):
                 line_number = last_line + idx + 1
@@ -414,16 +444,16 @@ class ConversationMonitor(FileSystemEventHandler):
                     self.state_manager.set_last_line(filename, line_number)
 
                 except json.JSONDecodeError as e:
-                    print(f"Warning: Invalid JSON at {filename}:{line_number}: {e}")
+                    logger.warning(f"Invalid JSON at {filename}:{line_number}: {e}")
                     # Still update state to skip this line
                     self.state_manager.set_last_line(filename, line_number)
                 except requests.RequestException as e:
-                    print(f"API error at {filename}:{line_number}: {e}")
+                    logger.error(f"API error at {filename}:{line_number}: {e}")
                     # Don't update state so we retry later
                     break
 
         except Exception as e:
-            print(f"Error processing {file_path}: {e}")
+            logger.error(f"Error processing {file_path}: {e}")
 
     def redact_secrets_from_event(self, event_data: dict) -> dict:
         """
@@ -440,24 +470,24 @@ class ConversationMonitor(FileSystemEventHandler):
 
         # Debug logging
         event_type = event_data.get("type")
-        print(f"  [DEBUG] Event type: {event_type}")
+        logger.debug(f"Event type: {event_type}")
 
         # Check if this is a user or assistant message with text content
         if event_type in ("user", "assistant", "message"):
             message = event_data.get("message", {})
-            print(f"  [DEBUG] Message found: {bool(message)}")
+            logger.debug(f"Message found: {bool(message)}")
             if message and "content" in message:
                 content = message.get("content", [])
-                print(
-                    f"  [DEBUG] Content blocks: {len(content) if isinstance(content, list) else 0}"
+                logger.debug(
+                    f"Content blocks: {len(content) if isinstance(content, list) else 0}"
                 )
                 if isinstance(content, list):
                     # Check each content block
                     for i, block in enumerate(content):
                         if isinstance(block, dict) and block.get("type") == "text":
                             text = block.get("text", "")
-                            print(
-                                f"  [DEBUG] Block {i} text length: {len(text)}, preview: {text[:100]}"
+                            logger.debug(
+                                f"Block {i} text length: {len(text)}, preview: {text[:100]}"
                             )
                             if text:
                                 # Redact if secrets found
@@ -468,11 +498,11 @@ class ConversationMonitor(FileSystemEventHandler):
                                         **block,
                                         "text": redacted_text,
                                     }
-                                    print(
-                                        f"  ⚠️  Secret detected and redacted in message"
+                                    logger.warning(
+                                        "Secret detected and redacted in message"
                                     )
                                 else:
-                                    print(f"  [DEBUG] No secrets found in block {i}")
+                                    logger.debug(f"No secrets found in block {i}")
 
         return event_data
 
@@ -507,7 +537,7 @@ class ConversationMonitor(FileSystemEventHandler):
                 response.raise_for_status()
                 api_success = True
             except requests.RequestException as e:
-                print(f"  API error {filename}:{line_number}: {e}")
+                logger.error(f"API error {filename}:{line_number}: {e}")
 
         # Try SQLite if enabled (with original unredacted data for local storage)
         if self.sqlite_manager and self.sqlite_manager.enabled:
@@ -529,10 +559,10 @@ class ConversationMonitor(FileSystemEventHandler):
                 git_info.append(f"repo:{repo_name}")
             if git_commit_hash:
                 git_info.append(f"commit:{git_commit_hash[:7]}")
-            status_msg = f"  Inserted: {filename}:{line_number} → {', '.join(status)}"
+            status_msg = f"Inserted: {filename}:{line_number} → {', '.join(status)}"
             if git_info:
                 status_msg += f" [{', '.join(git_info)}]"
-            print(status_msg)
+            logger.info(status_msg)
 
         # Only raise error if both failed (or if neither is enabled)
         if not api_success and not sqlite_success:
@@ -551,7 +581,7 @@ class ConversationMonitor(FileSystemEventHandler):
 
         file_path = Path(event.src_path)
         if file_path.suffix == ".jsonl":
-            print(f"\nDetected change: {file_path.name}")
+            logger.info(f"Detected change: {file_path.name}")
             self.process_file(file_path)
 
     def on_created(self, event):
@@ -561,15 +591,15 @@ class ConversationMonitor(FileSystemEventHandler):
 
         file_path = Path(event.src_path)
         if file_path.suffix == ".jsonl":
-            print(f"\nDetected new file: {file_path.name}")
+            logger.info(f"Detected new file: {file_path.name}")
             self.process_file(file_path)
 
     def process_existing_files(self, directory: Path):
         """Process all existing JSONL files on startup."""
-        print("\nProcessing existing files...")
+        logger.info("Processing existing files...")
         for file_path in directory.glob("**/*.jsonl"):
             self.process_file(file_path)
-        print("Finished processing existing files\n")
+        logger.info("Finished processing existing files")
 
 
 def check_claude_skills():
@@ -741,12 +771,9 @@ def daemonize():
     sys.stdout.flush()
     sys.stderr.flush()
 
+    # Set up logging to file for daemon mode
     log_file = get_log_file()
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with open(log_file, "a") as f:
-        os.dup2(f.fileno(), sys.stdout.fileno())
-        os.dup2(f.fileno(), sys.stderr.fileno())
+    setup_logging(log_file)
 
     # Close stdin
     with open("/dev/null", "r") as f:
@@ -770,15 +797,15 @@ def cmd_start(args):
 
     # Set up signal handlers
     def signal_handler(signum, frame):
-        print(f"\nReceived signal {signum}, stopping monitor...")
+        logger.info(f"Received signal {signum}, stopping monitor...")
         remove_pid_file()
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGINT, signal_handler)
 
-    # Run the monitor
-    print(f"Monitor started at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+    # Run the monitor (logging is already set up by daemonize())
+    logger.info("Monitor started")
     run_monitor(args)
 
 
@@ -963,14 +990,18 @@ def cmd_logs(args):
 
 def run_monitor(args):
     """Run the vibe-check process (extracted from main for daemon support)."""
+    # Set up logging for console if not already configured (foreground mode)
+    if not logger.handlers:
+        setup_logging()
+
     # Load configuration
     config_path = Path(__file__).parent / "config.json"
     if "VIBE_CHECK_HOME" in os.environ:
         config_path = Path(os.environ["VIBE_CHECK_HOME"]) / "config.json"
 
     if not config_path.exists():
-        print(f"Error: Configuration file not found: {config_path}")
-        print("Please create config.json with your API configuration")
+        logger.error(f"Configuration file not found: {config_path}")
+        logger.error("Please create config.json with your API configuration")
         sys.exit(1)
 
     with open(config_path, "r") as f:
@@ -980,10 +1011,10 @@ def run_monitor(args):
     conversation_dir = Path(config["monitor"]["conversation_dir"]).expanduser()
 
     if not conversation_dir.exists():
-        print(f"Error: Conversation directory not found: {conversation_dir}")
+        logger.error(f"Conversation directory not found: {conversation_dir}")
         sys.exit(1)
 
-    print(f"Monitoring directory: {conversation_dir}")
+    logger.info(f"Monitoring directory: {conversation_dir}")
 
     # Check for Claude Code skills (unless skipped)
     if not args.skip_skills_check:
@@ -992,7 +1023,7 @@ def run_monitor(args):
     # Debug filter
     debug_filter = config["monitor"].get("debug_filter_project")
     if debug_filter:
-        print(f"DEBUG: Only processing project: {debug_filter}")
+        logger.debug(f"Only processing project: {debug_filter}")
 
     # Initialize state manager
     state_file = Path(__file__).parent / config["monitor"]["state_file"]
@@ -1024,17 +1055,17 @@ def run_monitor(args):
     observer.schedule(event_handler, str(conversation_dir), recursive=True)
     observer.start()
 
-    print("Monitoring for changes... (Press Ctrl+C to stop)")
+    logger.info("Monitoring for changes... (Press Ctrl+C to stop)")
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nStopping vibe-check process...")
+        logger.info("Stopping vibe-check process...")
         observer.stop()
 
     observer.join()
-    print("vibe-check process Monitor stopped")
+    logger.info("vibe-check process Monitor stopped")
 
 
 def main():
