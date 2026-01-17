@@ -3,8 +3,8 @@ class VibeCheck < Formula
 
   desc "Claude Code conversation monitoring and analytics"
   homepage "https://github.com/wanderingstan/vibe-check"
-  url "https://github.com/wanderingstan/vibe-check/archive/refs/tags/v1.0.5.tar.gz"
-  sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+  url "https://github.com/wanderingstan/vibe-check/archive/refs/tags/v1.0.6.tar.gz"
+  sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   license "MIT"
   head "https://github.com/wanderingstan/vibe-check.git", branch: "main"
 
@@ -12,48 +12,48 @@ class VibeCheck < Formula
 
   resource "watchdog" do
     url "https://files.pythonhosted.org/packages/db/7d/7f3d619e951c88ed75c6037b246ddcf2d322812ee8ea189be89511721d54/watchdog-6.0.0.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   resource "requests" do
     url "https://files.pythonhosted.org/packages/63/70/2bf7780ad2d390a8d301ad0b550f1581eadbd9a20f896afe06353c2a2913/requests-2.32.3.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   resource "detect-secrets" do
     url "https://files.pythonhosted.org/packages/69/67/382a863fff94eae5a0cf05542179169a1c49a4c8784a9480621e2066ca7d/detect_secrets-1.5.0.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   resource "pymysql" do
     url "https://files.pythonhosted.org/packages/b3/8f/ce59b5e5ed4ce8512f879ff1fa5ab699d211ae2495f1adaa5fbba2a1eada/pymysql-1.1.1.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   # Additional dependencies for detect-secrets
   resource "certifi" do
     url "https://files.pythonhosted.org/packages/b0/ee/9b19140fe824b367c04c5e1b369942dd754c4c5462d5674002f75c4dedc1/certifi-2024.8.30.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   resource "charset-normalizer" do
     url "https://files.pythonhosted.org/packages/f2/4f/e1808dc01273379acc506d18f1504eb2d299bd4131743b9fc54d7be4df1e/charset_normalizer-3.4.0.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   resource "idna" do
     url "https://files.pythonhosted.org/packages/f1/70/7703c29685631f5a7590aa73f1f1d3fa9a380e654b86af429e0934a32f7d/idna-3.10.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   resource "urllib3" do
     url "https://files.pythonhosted.org/packages/ed/63/22ba4ebfe7430b76388e7cd448d5478814d3032121827c12a2cc287e2260/urllib3-2.2.3.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   resource "pyyaml" do
     url "https://files.pythonhosted.org/packages/54/ed/79a089b6be93607fa5cdaedf301d7dfb23af5f25c398d5ead2525b063e17/pyyaml-6.0.2.tar.gz"
-    sha256 "5f4e483feb1784d8ef270e1f0b5c8e8ee9344bd66d4bc5edd982380212186efb"
+    sha256 "bdff8e17f2a7dc62e292219bfa41e6f9df42d2b310784b2fb6f2573d94c76539"
   end
 
   def install
