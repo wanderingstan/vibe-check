@@ -823,6 +823,43 @@ def cmd_restart(args):
     cmd_start(args)
 
 
+def get_config_path() -> Path:
+    """Get the path to the config file."""
+    if "VIBE_CHECK_HOME" in os.environ:
+        return Path(os.environ["VIBE_CHECK_HOME"]) / "config.json"
+    return Path(__file__).parent / "config.json"
+
+
+def get_state_file_path() -> Path:
+    """Get the path to the state file."""
+    if "VIBE_CHECK_HOME" in os.environ:
+        return Path(os.environ["VIBE_CHECK_HOME"]) / "state.json"
+    # Try to read from config, fall back to default
+    config_path = get_config_path()
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                config = json.load(f)
+            return Path(__file__).parent / config["monitor"]["state_file"]
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return Path(__file__).parent / "state.json"
+
+
+def get_sqlite_db_path() -> Optional[Path]:
+    """Get the path to the SQLite database from config."""
+    config_path = get_config_path()
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                config = json.load(f)
+            if "sqlite" in config and config["sqlite"].get("enabled", True):
+                return Path(config["sqlite"]["database_path"]).expanduser()
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return None
+
+
 def cmd_status(args):
     """Check vibe-check process status."""
     pid = is_running()
@@ -841,6 +878,65 @@ def cmd_status(args):
             pass
     else:
         print("⚠️  vibe-check process is not running")
+
+    # Show file locations
+    print("\n📁 File locations:")
+
+    # Config file
+    config_path = get_config_path()
+    if config_path.exists():
+        print(f"   Config:   {config_path}")
+    else:
+        print(f"   Config:   {config_path} (not found)")
+
+    # SQLite database
+    db_path = get_sqlite_db_path()
+    if db_path:
+        if db_path.exists():
+            # Show file size
+            size_bytes = db_path.stat().st_size
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.1f} KB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+            print(f"   Database: {db_path} ({size_str})")
+        else:
+            print(f"   Database: {db_path} (not created yet)")
+    else:
+        print("   Database: (SQLite disabled or not configured)")
+
+    # Log file
+    log_path = get_log_file()
+    if log_path.exists():
+        size_bytes = log_path.stat().st_size
+        if size_bytes < 1024:
+            size_str = f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            size_str = f"{size_bytes / 1024:.1f} KB"
+        else:
+            size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+        print(f"   Log:      {log_path} ({size_str})")
+    else:
+        print(f"   Log:      {log_path} (not created yet)")
+
+    # State file
+    state_path = get_state_file_path()
+    if state_path.exists():
+        print(f"   State:    {state_path}")
+    else:
+        print(f"   State:    {state_path} (not created yet)")
+
+    # PID file
+    pid_path = get_pid_file()
+    if pid_path.exists():
+        print(f"   PID:      {pid_path}")
+    else:
+        print(f"   PID:      {pid_path} (not created)")
+
+    # Exit with error if not running
+    if not pid:
         sys.exit(1)
 
 
@@ -948,15 +1044,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
-  start         Start the vibe-check rocess in background
+  start         Start the vibe-check process in background
   stop          Stop the background process
   restart       Restart vibe-check process
   status        Check if vibe-check process is running
   logs          View vibe-check logs
-  (no command)  Run vibe-check in foreground (default)
+  (no command)  Show status if running, or prompt to start
 
 Examples:
-  vibe-check                    # Run in foreground
+  vibe-check                    # Show status or prompt to start
   vibe-check start              # Start in background
   vibe-check stop               # Stop background monitor
   vibe-check status             # Check status
@@ -1022,8 +1118,34 @@ Examples:
     if hasattr(args, "func"):
         args.func(args)
     else:
-        # No subcommand = run in foreground
-        run_monitor(args)
+        # No subcommand - check if already running
+        pid = is_running()
+        if pid:
+            # Already running, show status
+            cmd_status(args)
+        else:
+            # Not running, prompt user for how to run
+            print("🧜 Vibe Check is not running.")
+            print("\nHow would you like to run it?")
+            print("  [f] Foreground (see output, Ctrl+C to stop)")
+            print("  [b] Background (runs as daemon)")
+            print("  [q] Quit")
+            print("\nChoice [f/b/q]: ", end="", flush=True)
+
+            try:
+                choice = input().strip().lower()
+                if choice in ["f", "foreground"]:
+                    run_monitor(args)
+                elif choice in ["b", "background"]:
+                    cmd_start(args)
+                elif choice in ["q", "quit", ""]:
+                    print("Exiting.")
+                else:
+                    print(f"Unknown choice: {choice}")
+                    sys.exit(1)
+            except (EOFError, KeyboardInterrupt):
+                print("\nExiting.")
+                sys.exit(0)
 
 
 if __name__ == "__main__":
