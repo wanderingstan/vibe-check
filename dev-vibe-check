@@ -1,0 +1,19 @@
+#!/bin/bash
+# Development wrapper for vibe-check
+# Uses Homebrew's venv but points to dev code
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Use Homebrew's venv Python (has all dependencies)
+BREW_VENV="/usr/local/opt/vibe-check/libexec/bin/python3"
+
+# Point to dev code instead of Homebrew's installed code
+export PYTHONPATH="$SCRIPT_DIR"
+export VIBE_CHECK_HOME="${VIBE_CHECK_HOME:-/usr/local/var/vibe-check}"
+
+if [ ! -f "$BREW_VENV" ]; then
+  echo "Error: Homebrew venv not found. Install with: brew install vibe-check"
+  exit 1
+fi
+
+exec "$BREW_VENV" "$SCRIPT_DIR/monitor.py" "$@"
