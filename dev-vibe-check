@@ -16,4 +16,4 @@ if [ ! -f "$BREW_VENV" ]; then
   exit 1
 fi
 
-exec "$BREW_VENV" "$SCRIPT_DIR/monitor.py" "$@"
+exec "$BREW_VENV" "$SCRIPT_DIR/vibe-check.py" "$@"

@@ -438,7 +438,7 @@ cat > "$INSTALL_DIR/start.sh" <<'EOF'
 #!/bin/bash
 cd "$(dirname "$0")"
 source venv/bin/activate
-python monitor.py "$@"
+python vibe-check.py "$@"
 EOF
 
 chmod +x "$INSTALL_DIR/start.sh"
@@ -457,7 +457,7 @@ echo ""
 echo -e "${BLUE}To start monitoring:${NC}"
 echo -e "  cd $INSTALL_DIR"
 echo -e "  source venv/bin/activate"
-echo -e "  python monitor.py $SKIP_BACKLOG"
+echo -e "  python vibe-check.py $SKIP_BACKLOG"
 echo ""
 echo -e "${BLUE}Or use the convenience script:${NC}"
 echo -e "  $INSTALL_DIR/start.sh $SKIP_BACKLOG"

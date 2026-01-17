@@ -66,11 +66,11 @@ class VibeCheck < Formula
     end
 
     # Copy Python modules to libexec
-    libexec.install "monitor.py", "secret_detector.py"
+    libexec.install "vibe-check.py", "secret_detector.py"
     (libexec/"scripts").install "scripts/query-helper.sh"
 
-    # Make monitor.py executable
-    chmod 0755, libexec/"monitor.py"
+    # Make vibe-check.py executable
+    chmod 0755, libexec/"vibe-check.py"
 
     # Install skills to share directory
     (share/"vibe-check/skills").install Dir["claude-skills/*.md"]
@@ -80,7 +80,7 @@ class VibeCheck < Formula
       #!/bin/bash
       export PYTHONPATH="#{libexec}"
       export VIBE_CHECK_HOME="#{var}/vibe-check"
-      exec "#{libexec}/bin/python3" "#{libexec}/monitor.py" "$@"
+      exec "#{libexec}/bin/python3" "#{libexec}/vibe-check.py" "$@"
     EOS
     chmod 0755, bin/"vibe-check"
 

@@ -183,4 +183,4 @@ CREATE TABLE conversation_events (
 
 - [Main README](README.md) - Installation and setup
 - [Schema Documentation](server-php/schema.sql) - Full database schema
-- [Monitor Script](monitor.py) - Data collection script
+- [Monitor Script](vibe-check.py) - Data collection script

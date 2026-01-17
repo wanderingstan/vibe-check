@@ -19,7 +19,7 @@ This feature automatically detects and redacts secrets (API keys, passwords, tok
 
 ### Real-time Protection
 
-The `monitor.py` script automatically scans all new messages for secrets before storing them:
+The `vibe-check.py` script automatically scans all new messages for secrets before storing them:
 
 1. When a new message is processed, it's scanned using `detect-secrets`
 2. If secrets are detected, the entire message is replaced with `<SECRET REDACTED>`
@@ -91,7 +91,7 @@ This runs built-in tests on sample text containing secrets.
 
 - `secret_detector.py` - Core secret detection library
 - `scripts/scan_and_redact_secrets.py` - Retroactive database scanner
-- `monitor.py` - Modified to include real-time secret detection
+- `vibe-check.py` - Modified to include real-time secret detection
 
 ## Security Notes
 

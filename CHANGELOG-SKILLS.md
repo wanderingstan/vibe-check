@@ -8,7 +8,7 @@ The monitor now automatically detects if Claude Code skills are installed and pr
 
 ### Changes
 
-#### 1. monitor.py
+#### 1. vibe-check.py
 
 **New Function: `check_claude_skills()`**
 - Checks if skills are installed in `~/.claude/skills/`
@@ -54,7 +54,7 @@ This prevents the background/cron process from hanging waiting for user input.
 #### First Interactive Run
 
 ```
-$ python monitor.py
+$ python vibe-check.py
 
 Monitoring directory: ~/.claude/projects
 
@@ -109,7 +109,7 @@ Monitoring for changes... (Press Ctrl+C to stop)
 #### Skills Already Installed
 
 ```
-$ python monitor.py
+$ python vibe-check.py
 
 Monitoring directory: ~/.claude/projects
 Monitoring for changes... (Press Ctrl+C to stop)
@@ -120,7 +120,7 @@ Monitoring for changes... (Press Ctrl+C to stop)
 #### Background/Cron Run
 
 ```
-$ python monitor.py --skip-backlog --skip-skills-check
+$ python vibe-check.py --skip-backlog --skip-skills-check
 
 Monitoring directory: ~/.claude/projects
 Monitoring for changes... (Press Ctrl+C to stop)
@@ -176,7 +176,7 @@ Monitoring for changes... (Press Ctrl+C to stop)
 ### Files Modified
 
 ```
-monitor.py                          # Added check_claude_skills() function
+vibe-check.py                       # Added check_claude_skills() function
 ~/Scripts/monitor_vibe_check.sh    # Added --skip-skills-check flag
 README.md                           # Updated documentation
 ```
@@ -191,7 +191,7 @@ mkdir /tmp/skills-backup
 mv ~/.claude/skills/*.md /tmp/skills-backup/ 2>/dev/null
 
 # Run monitor (will show prompt)
-python monitor.py
+python vibe-check.py
 
 # Restore skills
 mv /tmp/skills-backup/*.md ~/.claude/skills/

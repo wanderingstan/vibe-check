@@ -207,7 +207,7 @@ Create your own skills by:
 ## Resources
 
 - [Main README](README.md) - vibe-check installation
-- [Monitor Script](monitor.py) - Data collection
+- [Monitor Script](vibe-check.py) - Data collection
 - [Schema](server-php/schema.sql) - Database schema
 
 ---

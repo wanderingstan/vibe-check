@@ -47,7 +47,7 @@ fi
 
 # Stop any running monitor processes
 echo -e "${BLUE}Checking for running monitor processes...${NC}"
-MONITOR_PIDS=$(pgrep -f "$INSTALL_DIR/monitor.py" || true)
+MONITOR_PIDS=$(pgrep -f "$INSTALL_DIR/vibe-check.py" || true)
 if [ ! -z "$MONITOR_PIDS" ]; then
     echo -e "${YELLOW}Stopping monitor processes: $MONITOR_PIDS${NC}"
     kill $MONITOR_PIDS 2>/dev/null || true

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Claude Code Conversation Monitor
+vibe-check: Claude Code Conversation Monitor
 
 Monitors .jsonl files in the Claude Code conversations directory and
 sends new events to the Vibe Check API server.
@@ -678,16 +678,16 @@ def is_running() -> Optional[int]:
         except (ValueError, FileNotFoundError):
             pass
 
-    # Fallback: check if any monitor.py process is running (for brew services mode)
+    # Fallback: check if any vibe-check.py process is running (for brew services mode)
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "monitor.py"],
+            ["pgrep", "-f", "vibe-check.py"],
             capture_output=True,
             text=True,
         )
         if result.returncode == 0 and result.stdout.strip():
             # Get first PID from output
-            pids = result.stdout.strip().split('\n')
+            pids = result.stdout.strip().split("\n")
             return int(pids[0])
     except Exception:
         pass
@@ -805,29 +805,29 @@ def cmd_stop(args):
                 break
         else:
             # Still running, force kill
-            print("⚠️  Force killing monitor...")
+            print("⚠️  Force killing vibe-check process...")
             os.kill(pid, signal.SIGKILL)
             time.sleep(0.5)
 
         remove_pid_file()
-        print("✅ Monitor stopped")
+        print("✅ vibe-check process stopped")
     except OSError as e:
-        print(f"Error stopping monitor: {e}")
+        print(f"Error stopping vibe-check process: {e}")
         remove_pid_file()
 
 
 def cmd_restart(args):
-    """Restart the monitor daemon."""
+    """Restart the vibe-check process daemon."""
     cmd_stop(args)
     time.sleep(1)
     cmd_start(args)
 
 
 def cmd_status(args):
-    """Check monitor status."""
+    """Check vibe-check process status."""
     pid = is_running()
     if pid:
-        print(f"✅ Monitor is running (PID: {pid})")
+        print(f"✅ vibe-check process is running (PID: {pid})")
         # Show process info if possible
         try:
             result = subprocess.run(
@@ -840,12 +840,12 @@ def cmd_status(args):
         except Exception:
             pass
     else:
-        print("⚠️  Monitor is not running")
+        print("⚠️  vibe-check process is not running")
         sys.exit(1)
 
 
 def cmd_logs(args):
-    """View monitor logs."""
+    """View vibe-check process logs."""
     log_file = get_log_file()
 
     if not log_file.exists():
@@ -853,7 +853,7 @@ def cmd_logs(args):
         return
 
     # Show last 50 lines
-    lines = args.lines if hasattr(args, 'lines') and args.lines else 50
+    lines = args.lines if hasattr(args, "lines") and args.lines else 50
 
     try:
         with open(log_file, "r") as f:
@@ -866,7 +866,7 @@ def cmd_logs(args):
 
 
 def run_monitor(args):
-    """Run the monitor (extracted from main for daemon support)."""
+    """Run the vibe-check process (extracted from main for daemon support)."""
     # Load configuration
     config_path = Path(__file__).parent / "config.json"
     if "VIBE_CHECK_HOME" in os.environ:
@@ -934,26 +934,26 @@ def run_monitor(args):
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nStopping monitor...")
+        print("\nStopping vibe-check process...")
         observer.stop()
 
     observer.join()
-    print("Monitor stopped")
+    print("vibe-check process Monitor stopped")
 
 
 def main():
     """Main entry point with subcommands."""
     parser = argparse.ArgumentParser(
-        description="Claude Code Conversation Monitor",
+        description="Vibe Check: Claude Code Conversation tooling",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
-  start         Start the monitor in background
-  stop          Stop the background monitor
-  restart       Restart the monitor
-  status        Check if monitor is running
-  logs          View monitor logs
-  (no command)  Run monitor in foreground (default)
+  start         Start the vibe-check rocess in background
+  stop          Stop the background process
+  restart       Restart vibe-check process
+  status        Check if vibe-check process is running
+  logs          View vibe-check logs
+  (no command)  Run vibe-check in foreground (default)
 
 Examples:
   vibe-check                    # Run in foreground
@@ -962,7 +962,7 @@ Examples:
   vibe-check status             # Check status
   vibe-check logs               # View logs
   vibe-check --skip-backlog     # Run foreground, skip existing conversations
-        """
+        """,
     )
 
     # Global arguments (work with any command)
@@ -981,28 +981,37 @@ Examples:
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Start command
-    parser_start = subparsers.add_parser("start", help="Start monitor in background")
+    parser_start = subparsers.add_parser(
+        "start", help="Start vibe-check process in background"
+    )
     parser_start.set_defaults(func=cmd_start)
 
     # Stop command
-    parser_stop = subparsers.add_parser("stop", help="Stop background monitor")
+    parser_stop = subparsers.add_parser(
+        "stop", help="Stop background vibe-check process"
+    )
     parser_stop.set_defaults(func=cmd_stop)
 
     # Restart command
-    parser_restart = subparsers.add_parser("restart", help="Restart background monitor")
+    parser_restart = subparsers.add_parser(
+        "restart", help="Restart background vibe-check process"
+    )
     parser_restart.set_defaults(func=cmd_restart)
 
     # Status command
-    parser_status = subparsers.add_parser("status", help="Check monitor status")
+    parser_status = subparsers.add_parser(
+        "status", help="Check vibe-check process status"
+    )
     parser_status.set_defaults(func=cmd_status)
 
     # Logs command
-    parser_logs = subparsers.add_parser("logs", help="View monitor logs")
+    parser_logs = subparsers.add_parser("logs", help="View vibe-check logs")
     parser_logs.add_argument(
-        "-n", "--lines",
+        "-n",
+        "--lines",
         type=int,
         default=50,
-        help="Number of lines to show (default: 50)"
+        help="Number of lines to show (default: 50)",
     )
     parser_logs.set_defaults(func=cmd_logs)
 

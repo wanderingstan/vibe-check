@@ -68,7 +68,7 @@ This will remove the installation directory and stop any running monitor process
 
 ## Architecture
 
-- **Client (monitor.py)**: Watches local .jsonl files and sends events to API
+- **Client (vibe-check.py)**: Watches local .jsonl files and sends events to API
 - **Server (server-php/)**: PHP API that authenticates requests and stores in MySQL
 
 ## Features
@@ -157,7 +157,7 @@ Edit `config.json` with your API details and monitoring settings:
 
 ```bash
 source venv/bin/activate
-python monitor.py
+python vibe-check.py
 ```
 
 **Skip Backlog (First Run):**
@@ -165,7 +165,7 @@ python monitor.py
 If you don't want to upload existing conversation history, use the `--skip-backlog` flag on first run:
 
 ```bash
-python monitor.py --skip-backlog
+python vibe-check.py --skip-backlog
 ```
 
 This will fast-forward the state to the latest line in all conversation files without uploading them. Future runs will only monitor new conversations from that point forward.
@@ -175,7 +175,7 @@ This will fast-forward the state to the latest line in all conversation files wi
 If you want to skip the skills installation prompt (e.g., in automated setups):
 
 ```bash
-python monitor.py --skip-skills-check
+python vibe-check.py --skip-skills-check
 ```
 
 ## Daemon Management
@@ -205,12 +205,12 @@ vibe-check logs      # View logs
 The monitor script has built-in daemon management:
 
 ```bash
-python monitor.py start     # Start in background
-python monitor.py stop      # Stop
-python monitor.py restart   # Restart
-python monitor.py status    # Check if running
-python monitor.py logs      # View logs (last 50 lines)
-python monitor.py logs -n 100  # View last 100 lines
+python vibe-check.py start     # Start in background
+python vibe-check.py stop      # Stop
+python vibe-check.py restart   # Restart
+python vibe-check.py status    # Check if running
+python vibe-check.py logs      # View logs (last 50 lines)
+python vibe-check.py logs -n 100  # View last 100 lines
 ```
 
 ### Legacy Management Script
@@ -252,7 +252,7 @@ See [server-php/README.md](server-php/README.md) for server installation and con
 
 ## Files
 
-- `monitor.py` - Main monitoring client script
+- `vibe-check.py` - Main monitoring client script
 - `scripts/manage_monitor.sh` - Management script for starting/stopping monitor and installing cron job
 - `config.json` - API credentials and settings
 - `state.json` - Auto-generated state tracking (last processed line per file)
