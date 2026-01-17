@@ -816,6 +816,24 @@ def cmd_stop(args):
         print("⚠️  Monitor is not running")
         return
 
+    # Check if running as a brew service (launchd will restart it if we just kill it)
+    try:
+        result = subprocess.run(
+            ["brew", "services", "list"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and "vibe-check" in result.stdout:
+            # Parse the output to check if it's started
+            for line in result.stdout.splitlines():
+                if "vibe-check" in line and "started" in line.lower():
+                    print("ℹ️  vibe-check is running as a Homebrew service.")
+                    print("   Use: brew services stop vibe-check")
+                    return
+    except FileNotFoundError:
+        # brew command not found, not a brew installation
+        pass
+
     print(f"🧜 Stopping monitor (PID: {pid})...")
 
     try:
@@ -837,7 +855,7 @@ def cmd_stop(args):
             time.sleep(0.5)
 
         remove_pid_file()
-        print("✅ vibe-check process stopped")
+        print(f"✅ vibe-check process {pid} stopped")
     except OSError as e:
         print(f"Error stopping vibe-check process: {e}")
         remove_pid_file()
