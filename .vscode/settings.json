@@ -1,0 +1,23 @@
+{
+  "workbench.colorCustomizations": {
+    // Status bar - purple/pink vibe theme
+    "statusBar.background": "#7c3aed",
+    "statusBar.foreground": "#ffffff",
+    "statusBar.noFolderBackground": "#7c3aed",
+
+    // Title bar
+    "titleBar.activeBackground": "#6d28d9",
+    "titleBar.activeForeground": "#ffffff",
+    "titleBar.inactiveBackground": "#5b21b6",
+    "titleBar.inactiveForeground": "#e9d5ff",
+
+    // Activity bar (left sidebar)
+    "activityBar.background": "#6d28d9",
+    "activityBar.foreground": "#ffffff",
+    "activityBar.inactiveForeground": "#c4b5fd",
+
+    // Accent color for highlights
+    "activityBarBadge.background": "#ec4899",
+    "activityBarBadge.foreground": "#ffffff"
+  }
+}
