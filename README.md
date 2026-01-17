@@ -6,7 +6,7 @@ New skills in Claude code then allow you to reference and analyze your past conv
 
 ## Installation
 
-### Homebrew (Recommended)
+### MacOS Homebrew (Recommended)
 
 The easiest way to install on macOS:
 
@@ -30,7 +30,7 @@ vibe-check logs      # View logs
 vibe-check restart   # Restart
 ```
 
-### Quick Install (Alternative)
+### Other platforms / Manual
 
 Install via curl script:
 
@@ -274,14 +274,15 @@ Data files are stored in different locations depending on your installation meth
 
 All data lives in `/opt/homebrew/var/vibe-check/`:
 
-| File | Path |
-|------|------|
+| File         | Path                                         |
+| ------------ | -------------------------------------------- |
 | **Database** | `/opt/homebrew/var/vibe-check/vibe_check.db` |
-| **Config** | `/opt/homebrew/var/vibe-check/config.json` |
-| **PID file** | `/opt/homebrew/var/vibe-check/.monitor.pid` |
-| **Log file** | `/opt/homebrew/var/vibe-check/monitor.log` |
+| **Config**   | `/opt/homebrew/var/vibe-check/config.json`   |
+| **PID file** | `/opt/homebrew/var/vibe-check/.monitor.pid`  |
+| **Log file** | `/opt/homebrew/var/vibe-check/monitor.log`   |
 
 When running via `brew services`, additional logs go to:
+
 - `/opt/homebrew/var/log/vibe-check.log`
 - `/opt/homebrew/var/log/vibe-check.error.log`
 
@@ -289,12 +290,12 @@ When running via `brew services`, additional logs go to:
 
 All data lives in the `data/` subdirectory of the installation (e.g., `~/.vibe-check/data/`):
 
-| File | Path |
-|------|------|
+| File         | Path                               |
+| ------------ | ---------------------------------- |
 | **Database** | `<install_dir>/data/vibe_check.db` |
-| **Config** | `<install_dir>/data/config.json` |
-| **PID file** | `<install_dir>/data/.monitor.pid` |
-| **Log file** | `<install_dir>/data/monitor.log` |
+| **Config**   | `<install_dir>/data/config.json`   |
+| **PID file** | `<install_dir>/data/.monitor.pid`  |
+| **Log file** | `<install_dir>/data/monitor.log`   |
 
 This keeps data files separate from source code and documentation.
 
