@@ -657,25 +657,42 @@ def get_log_file() -> Path:
 
 
 def is_running() -> Optional[int]:
-    """Check if monitor is already running. Returns PID if running, None otherwise."""
+    """Check if monitor is already running. Returns PID if running, None otherwise.
+
+    Checks both PID file (for manual daemon mode) and process list (for brew services).
+    """
+    # First check PID file (for manual daemon mode)
     pid_file = get_pid_file()
-    if not pid_file.exists():
-        return None
-
-    try:
-        with open(pid_file, "r") as f:
-            pid = int(f.read().strip())
-
-        # Check if process is actually running
+    if pid_file.exists():
         try:
-            os.kill(pid, 0)  # Signal 0 just checks if process exists
-            return pid
-        except OSError:
-            # Process doesn't exist, clean up stale PID file
-            pid_file.unlink()
-            return None
-    except (ValueError, FileNotFoundError):
-        return None
+            with open(pid_file, "r") as f:
+                pid = int(f.read().strip())
+
+            # Check if process is actually running
+            try:
+                os.kill(pid, 0)  # Signal 0 just checks if process exists
+                return pid
+            except OSError:
+                # Process doesn't exist, clean up stale PID file
+                pid_file.unlink()
+        except (ValueError, FileNotFoundError):
+            pass
+
+    # Fallback: check if any monitor.py process is running (for brew services mode)
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "monitor.py"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Get first PID from output
+            pids = result.stdout.strip().split('\n')
+            return int(pids[0])
+    except Exception:
+        pass
+
+    return None
 
 
 def write_pid_file():
