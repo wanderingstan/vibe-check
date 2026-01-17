@@ -11,7 +11,7 @@ class VibeCheck < Formula
   depends_on "python@3.12"
 
   resource "watchdog" do
-    url "https://files.pythonhosted.org/packages/cd/76/ee0da939f1f288d733dd372af26e3d6096ad9ccf574ded9c1aee3fc0c6bb/watchdog-6.0.0.tar.gz"
+    url "https://files.pythonhosted.org/packages/db/7d/7f3d619e951c88ed75c6037b246ddcf2d322812ee8ea189be89511721d54/watchdog-6.0.0.tar.gz"
     sha256 "9ddf7c82fda3ae8e24decda1338ede66e1c99883db93711d8fb941eaa2d8c282"
   end
 
