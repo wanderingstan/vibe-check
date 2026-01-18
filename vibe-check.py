@@ -1118,9 +1118,11 @@ def cmd_auth_login(args):
 
     try:
         # Start device flow
+        # Note: Custom User-Agent required - mod_security blocks python-requests default UA
         response = requests.post(
             f"{auth_base}/api/cli/auth/start",
-            json={},  # Empty body required - mod_security blocks bodyless POSTs
+            json={},
+            headers={"User-Agent": "vibe-check-cli/1.0"},
             timeout=10
         )
         response.raise_for_status()
@@ -1157,7 +1159,7 @@ def cmd_auth_login(args):
                 poll_response = requests.post(
                     f"{auth_base}/api/cli/auth/poll",
                     json={"device_code": device_code},
-                    headers={"Content-Type": "application/json"},
+                    headers={"User-Agent": "vibe-check-cli/1.0"},
                     timeout=10
                 )
 
