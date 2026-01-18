@@ -1120,7 +1120,7 @@ def cmd_auth_login(args):
         # Start device flow
         response = requests.post(
             f"{auth_base}/api/cli/auth/start",
-            headers={"Content-Type": "application/json"},
+            json={},  # Empty body required - mod_security blocks bodyless POSTs
             timeout=10
         )
         response.raise_for_status()
