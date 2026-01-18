@@ -467,13 +467,25 @@ class ConversationMonitor(FileSystemEventHandler):
         else:
             logger.info("Remote API recording is disabled")
 
+        # Log configuration summary
+        destinations = []
+        if self.api_enabled:
+            destinations.append(f"remote ({self.api_endpoint})")
+        if sqlite_manager and sqlite_manager.enabled:
+            destinations.append(f"local ({sqlite_manager.db_path})")
+        if destinations:
+            logger.info(f"Recording destinations: {', '.join(destinations)}")
+        else:
+            logger.warning("No recording destinations enabled!")
+
     def test_connection(self):
-        """Test API connection."""
+        """Test API connection. Non-fatal if connection fails."""
         try:
             # Try the configured URL first
             response = self.session.get(f"{self.api_endpoint}/health")
             response.raise_for_status()
             logger.info(f"Connected to API server: {self.api_endpoint}")
+            return True
         except requests.RequestException as e:
             # If that fails and URL doesn't already have api.php, try adding it
             if "/api.php" not in self.api_endpoint:
@@ -482,12 +494,14 @@ class ConversationMonitor(FileSystemEventHandler):
                     response = self.session.get(f"{self.api_endpoint}/health")
                     response.raise_for_status()
                     logger.info(f"Connected to API server: {self.api_endpoint}")
-                    return
+                    return True
                 except requests.RequestException:
                     pass
 
-            logger.error(f"Error connecting to API: {e}")
-            sys.exit(1)
+            logger.warning(f"Could not connect to remote API: {e}")
+            logger.warning("Remote sync disabled. Local recording will continue.")
+            self.api_enabled = False
+            return False
 
     def process_file(self, file_path: Path):
         """Process new lines in a JSONL file."""
@@ -523,11 +537,18 @@ class ConversationMonitor(FileSystemEventHandler):
 
             logger.info(f"Processing {len(new_lines)} new line(s) from {filename}")
 
+            # Track success counts
+            api_success_count = 0
+            sqlite_success_count = 0
+            processed_count = 0
+            skipped_count = 0
+
             for idx, line in enumerate(new_lines):
                 line_number = last_line + idx + 1
                 line = line.strip()
 
                 if not line:
+                    skipped_count += 1
                     continue
 
                 try:
@@ -535,7 +556,12 @@ class ConversationMonitor(FileSystemEventHandler):
                     event_data = json.loads(line)
 
                     # Insert into database
-                    self.insert_event(filename, line_number, event_data)
+                    api_success, sqlite_success = self.insert_event(filename, line_number, event_data)
+                    processed_count += 1
+                    if api_success:
+                        api_success_count += 1
+                    if sqlite_success:
+                        sqlite_success_count += 1
 
                     # Update state
                     self.state_manager.set_last_line(filename, line_number)
@@ -544,10 +570,25 @@ class ConversationMonitor(FileSystemEventHandler):
                     logger.warning(f"Invalid JSON at {filename}:{line_number}: {e}")
                     # Still update state to skip this line
                     self.state_manager.set_last_line(filename, line_number)
+                    skipped_count += 1
                 except requests.RequestException as e:
                     logger.error(f"API error at {filename}:{line_number}: {e}")
                     # Don't update state so we retry later
                     break
+
+            # Log summary of what was written
+            if processed_count > 0:
+                destinations = []
+                if self.api_enabled:
+                    destinations.append(f"remote:{api_success_count}/{processed_count}")
+                if self.sqlite_manager and self.sqlite_manager.enabled:
+                    destinations.append(f"local:{sqlite_success_count}/{processed_count}")
+                logger.info(f"Write summary for {filename}: {', '.join(destinations)}")
+
+                # Warn if remote is enabled but failing
+                if self.api_enabled and api_success_count == 0 and processed_count > 0:
+                    logger.warning(f"Remote API enabled but 0/{processed_count} events written to server!")
+                    logger.warning(f"Check API connection: {self.api_endpoint}")
 
         except Exception as e:
             logger.error(f"Error processing {file_path}: {e}")
@@ -603,8 +644,12 @@ class ConversationMonitor(FileSystemEventHandler):
 
         return event_data
 
-    def insert_event(self, filename: str, line_number: int, event_data: dict):
-        """Insert an event via API and SQLite (if enabled)."""
+    def insert_event(self, filename: str, line_number: int, event_data: dict) -> Tuple[bool, bool]:
+        """Insert an event via API and SQLite (if enabled).
+
+        Returns:
+            Tuple of (api_success, sqlite_success) booleans
+        """
         api_success = False
         sqlite_success = False
 
@@ -670,6 +715,8 @@ class ConversationMonitor(FileSystemEventHandler):
                     "Both API and SQLite are disabled - at least one must be enabled"
                 )
             raise requests.RequestException("Both API and SQLite insertion failed")
+
+        return api_success, sqlite_success
 
     def on_modified(self, event):
         """Handle file modification events."""
