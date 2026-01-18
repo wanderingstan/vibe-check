@@ -16,7 +16,7 @@ From the vibe-check directory, run:
 ./claude-skills/install-skills.sh
 ```
 
-This will copy all 4 skills to `~/.claude/skills/`.
+This will copy all 6 skills to `~/.claude/skills/`.
 
 ### Manual Install
 
@@ -64,6 +64,15 @@ Shows recent activity:
 - This week's summary
 - Session duration and message counts
 - Repository and branch information
+
+### 5. [get-session-id.md](get-session-id.md)
+**Triggers:** "get session id", "what is my session id", "current session", "what session is this"
+
+Get the current session's identifiers:
+- Emits a unique marker into the conversation
+- Queries the database to find the marker
+- Returns session ID and log file path
+- Useful for debugging and cross-referencing
 
 ## How It Works
 
@@ -140,6 +149,8 @@ rm ~/.claude/skills/claude-stats.md
 rm ~/.claude/skills/search-conversations.md
 rm ~/.claude/skills/analyze-tools.md
 rm ~/.claude/skills/recent-work.md
+rm ~/.claude/skills/view-stats.md
+rm ~/.claude/skills/get-session-id.md
 ```
 
 Or to remove all skills:

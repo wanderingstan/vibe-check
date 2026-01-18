@@ -21,7 +21,7 @@ fi
 
 # Backup existing skills if any match
 NEEDS_BACKUP=false
-for skill in claude-stats search-conversations analyze-tools recent-work view-stats; do
+for skill in claude-stats search-conversations analyze-tools recent-work view-stats get-session-id; do
     if [ -f "$SKILLS_DIR/${skill}.md" ]; then
         NEEDS_BACKUP=true
         break
@@ -31,7 +31,7 @@ done
 if [ "$NEEDS_BACKUP" = true ]; then
     echo "⚠️  Some skills already exist. Creating backup..."
     mkdir -p "$BACKUP_DIR"
-    for skill in claude-stats search-conversations analyze-tools recent-work view-stats; do
+    for skill in claude-stats search-conversations analyze-tools recent-work view-stats get-session-id; do
         if [ -f "$SKILLS_DIR/${skill}.md" ]; then
             cp "$SKILLS_DIR/${skill}.md" "$BACKUP_DIR/"
             echo "  Backed up: ${skill}.md"
@@ -48,8 +48,9 @@ cp "$SCRIPT_DIR/search-conversations.md" "$SKILLS_DIR/"
 cp "$SCRIPT_DIR/analyze-tools.md" "$SKILLS_DIR/"
 cp "$SCRIPT_DIR/recent-work.md" "$SKILLS_DIR/"
 cp "$SCRIPT_DIR/view-stats.md" "$SKILLS_DIR/"
+cp "$SCRIPT_DIR/get-session-id.md" "$SKILLS_DIR/"
 
-echo "✓ Installed 5 skills to ~/.claude/skills/"
+echo "✓ Installed 6 skills to ~/.claude/skills/"
 echo ""
 echo "📚 Available skills:"
 echo "  • claude-stats.md - Usage statistics"
@@ -57,6 +58,7 @@ echo "  • search-conversations.md - Search conversation history"
 echo "  • analyze-tools.md - Tool usage analysis"
 echo "  • recent-work.md - Recent sessions and activity"
 echo "  • view-stats.md - Open stats page in browser"
+echo "  • get-session-id.md - Get current session ID and log file"
 echo ""
 echo "🎯 Try them out!"
 echo "  Just ask Claude:"
@@ -65,6 +67,7 @@ echo "    'what have I been working on today?'"
 echo "    'search my conversations for X'"
 echo "    'what tools do I use most?'"
 echo "    'vibe stats' or 'open stats'"
+echo "    'get session id' or 'what session is this?'"
 echo ""
 echo "📖 For more info, see:"
 echo "  - SKILLS-README.md - Detailed documentation"
