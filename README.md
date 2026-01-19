@@ -30,9 +30,9 @@ vibe-check logs      # View logs
 vibe-check restart   # Restart
 ```
 
-### Other platforms / Manual
+### Linux / Other Platforms
 
-Install via curl script:
+For non-macOS systems (or macOS without Homebrew), install via curl:
 
 ```bash
 curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
@@ -41,20 +41,39 @@ curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
 This will:
 
 - Install Vibe Check to `~/.vibe-check`
-- Create your user account and API key
+- Open a browser for authentication
 - Set up the configuration
 - Start monitoring your Claude Code conversations
-- Prompt you to install Claude Code skills
+
+### From Git Repository
+
+If you've cloned the repo, you can install directly:
+
+```bash
+git clone https://github.com/wanderingstan/vibe-check.git
+cd vibe-check
+./scripts/install.sh
+```
+
+This runs vibe-check directly from the repo (no copying to `~/.vibe-check`).
 
 ## Updating
 
-To update to the latest version, simply run the install command again:
+**Homebrew:**
+```bash
+brew upgrade vibe-check
+```
 
+**Curl installation:**
 ```bash
 curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
 ```
 
-This will update the code and dependencies while preserving your configuration.
+**Git repo:**
+```bash
+git pull
+./scripts/install.sh  # Updates dependencies if needed
+```
 
 ## Uninstalling
 

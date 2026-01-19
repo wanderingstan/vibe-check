@@ -1,7 +1,16 @@
 #!/bin/bash
 
-# Vibe Check Installer
-# Install via: curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
+# Vibe Check Installer (non-Homebrew)
+#
+# For macOS users: Use Homebrew instead:
+#   brew tap wanderingstan/vibe-check
+#   brew install vibe-check
+#
+# For Linux/other systems, install via:
+#   curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
+#
+# Or run from within the git repo:
+#   ./scripts/install.sh
 
 # Set up logging to temp file
 INSTALL_LOG=$(mktemp /tmp/vibe-check-install.XXXXXX.log)
@@ -25,7 +34,7 @@ handle_error() {
     # Check if Claude Code CLI is available
     if command -v claude &> /dev/null; then
         echo ""
-        echo -e "${BLUE}🧜 Launching Claude Code to diagnose the issue...${NC}"
+        echo -e "${BLUE}Launching Claude Code to diagnose the issue...${NC}"
         echo ""
 
         # Find the README.md (might be in the repo if cloned, or fetch from GitHub)
@@ -58,7 +67,7 @@ Note: Could not find local README.md. You may want to fetch it from: https://raw
         fi
     else
         echo ""
-        echo -e "${YELLOW}💡 Tip: Install Claude Code CLI to get automatic error diagnosis:${NC}"
+        echo -e "${YELLOW}Tip: Install Claude Code CLI to get automatic error diagnosis:${NC}"
         echo -e "${YELLOW}   https://claude.com/claude-code${NC}"
         echo ""
         echo -e "${BLUE}You can manually share this log with Claude Code:${NC}"
@@ -88,6 +97,9 @@ detect_os() {
         OS="macos"
         if command -v brew &> /dev/null; then
             PKG_MANAGER="brew"
+            echo -e "${YELLOW}Note: For macOS with Homebrew, consider using:${NC}"
+            echo -e "${YELLOW}  brew tap wanderingstan/vibe-check && brew install vibe-check${NC}"
+            echo ""
         fi
     elif [[ -f /etc/os-release ]]; then
         . /etc/os-release
@@ -170,13 +182,30 @@ show_install_hint() {
 detect_os
 
 # Configuration
-INSTALL_DIR="$HOME/.vibe-check"
 REPO_URL="https://github.com/wanderingstan/vibe-check"
-API_URL="https://vibecheck.wanderingstan.com"
+
+# Check if we're running from within the git repo
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT_DIR=""
+RUNNING_FROM_REPO=false
+
+if [ -n "$SCRIPT_DIR" ]; then
+    # Check if we're in a git repo with vibe-check.py at parent level
+    PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+    if [ -f "$PARENT_DIR/vibe-check.py" ] && [ -d "$PARENT_DIR/.git" ]; then
+        RUNNING_FROM_REPO=true
+        INSTALL_DIR="$PARENT_DIR"
+        echo -e "${BLUE}Running from git repo: $INSTALL_DIR${NC}"
+    else
+        INSTALL_DIR="$HOME/.vibe-check"
+    fi
+else
+    INSTALL_DIR="$HOME/.vibe-check"
+fi
 
 echo -e "${BLUE}"
 echo "╔═══════════════════════════════════════╗"
-echo "║   🧜 Vibe Check Installer v1.0        ║"
+echo "║   Vibe Check Installer v1.1           ║"
+echo "║   (non-Homebrew installation)         ║"
 echo "╚═══════════════════════════════════════╝"
 echo -e "${NC}"
 
@@ -188,7 +217,7 @@ if [ ! -d "$HOME/.claude/projects" ]; then
     echo -e "${YELLOW}must be installed and used at least once before installing.${NC}"
     echo ""
     echo -e "${BLUE}To install Claude Code:${NC}"
-    echo -e "  https://code.claude.com/docs/en/overview"
+    echo -e "  https://claude.ai/download"
     echo ""
     echo -e "${BLUE}After installing, run Claude Code at least once, then re-run this installer.${NC}"
     exit 1
@@ -202,8 +231,10 @@ if [ -d "$INSTALL_DIR" ]; then
 
     cd "$INSTALL_DIR"
 
-    # Update from git
-    if [ -d ".git" ]; then
+    # Update from git (skip if running from repo - user manages their own git)
+    if [ "$RUNNING_FROM_REPO" = true ]; then
+        echo -e "${GREEN}✓ Using repo directly (run 'git pull' to update)${NC}"
+    elif [ -d ".git" ]; then
         # Stash any local changes before pulling
         if ! git diff --quiet 2>/dev/null; then
             echo -e "${YELLOW}⚠ Local changes detected, stashing...${NC}"
@@ -242,58 +273,51 @@ if [ -d "$INSTALL_DIR" ]; then
 
     # Check if config.json exists
     if [ ! -f "config.json" ]; then
-        echo -e "${YELLOW}⚠ Configuration file missing, need to register...${NC}"
-        SKIP_CLONE=true
-        # Fall through to registration section
+        echo -e "${YELLOW}⚠ Configuration file missing, need to authenticate...${NC}"
+        NEED_AUTH=true
     else
-        # Skip to the end (start monitoring)
-        SKIP_BACKLOG="--skip-backlog"
-
-        # Extract username and enabled status from config for display (may be empty for old configs)
-        USERNAME=$(grep -o '"username":"[^"]*' config.json 2>/dev/null | cut -d'"' -f4)
-        API_ENABLED=$(grep -o '"enabled":\s*true' config.json 2>/dev/null | head -1)
-
-        echo ""
-        echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║   🧜 Update Complete! 🎉              ║${NC}"
-        echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
-        echo ""
-        echo -e "${BLUE}To start monitoring:${NC}"
-        echo -e "  $INSTALL_DIR/start.sh"
-        echo ""
-        if [ -n "$USERNAME" ] && [ -n "$API_ENABLED" ]; then
-            echo -e "${BLUE}View your stats at:${NC}"
-            echo -e "  https://vibecheck.wanderingstan.com/stats.php?user=$USERNAME"
-            echo ""
-        fi
-
-        # Ask if user wants to start now
-        read -p "Do you want to start monitoring now? (Y/n): " -n 1 -r </dev/tty
-        echo
-        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            echo -e "${GREEN}🧜 Starting monitor...${NC}"
-            echo ""
-            # Clean up log file on success before exec
-            rm -f "$INSTALL_LOG"
-            exec "$INSTALL_DIR/start.sh" $SKIP_BACKLOG </dev/tty
+        # Check if already authenticated
+        API_KEY=$(grep -o '"api_key":"[^"]*' config.json 2>/dev/null | cut -d'"' -f4)
+        if [ -z "$API_KEY" ] || [ "$API_KEY" = "" ]; then
+            echo -e "${YELLOW}⚠ Not authenticated, need to login...${NC}"
+            NEED_AUTH=true
         else
-            # Clean up log file on success
-            rm -f "$INSTALL_LOG"
+            NEED_AUTH=false
+            echo ""
+            echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
+            echo -e "${GREEN}║   Update Complete!                    ║${NC}"
+            echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
+            echo ""
+            if [ "$RUNNING_FROM_REPO" = true ]; then
+                echo -e "${BLUE}To start monitoring:${NC}"
+                echo -e "  $INSTALL_DIR/vibe-check start"
+            else
+                echo -e "${BLUE}To start monitoring:${NC}"
+                echo -e "  vibe-check start"
+            fi
+            echo ""
+
+            # Ask if user wants to start now
+            read -p "Do you want to start monitoring now? (Y/n): " -n 1 -r </dev/tty
+            echo
+            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                echo -e "${GREEN}Starting monitor...${NC}"
+                rm -f "$INSTALL_LOG"
+                exec "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/vibe-check.py" start </dev/tty
+            else
+                rm -f "$INSTALL_LOG"
+            fi
+            exit 0
         fi
-        exit 0
     fi
 fi
 
-# Only do fresh install steps if not falling through from update
-if [ "$SKIP_CLONE" != "true" ]; then
+# Only do fresh install steps if venv doesn't exist
+if [ ! -d "$INSTALL_DIR/venv" ]; then
+    NEED_AUTH=true
+
     # Check dependencies
     echo -e "${BLUE}Checking dependencies...${NC}"
-
-    if ! command -v git &> /dev/null; then
-        echo -e "${RED}✗ Git is not installed.${NC}"
-        show_install_hint "git"
-        exit 1
-    fi
 
     if ! command -v python3 &> /dev/null; then
         echo -e "${RED}✗ Python 3 is not installed.${NC}"
@@ -301,21 +325,31 @@ if [ "$SKIP_CLONE" != "true" ]; then
         exit 1
     fi
 
-    if ! command -v curl &> /dev/null; then
-        echo -e "${RED}✗ curl is not installed.${NC}"
-        show_install_hint "curl"
-        exit 1
+    # Only need git and curl if not running from repo
+    if [ "$RUNNING_FROM_REPO" != true ]; then
+        if ! command -v git &> /dev/null; then
+            echo -e "${RED}✗ Git is not installed.${NC}"
+            show_install_hint "git"
+            exit 1
+        fi
+
+        if ! command -v curl &> /dev/null; then
+            echo -e "${RED}✗ curl is not installed.${NC}"
+            show_install_hint "curl"
+            exit 1
+        fi
     fi
 
     echo -e "${GREEN}✓ All dependencies found${NC}"
 
-    # Create installation directory
-    echo -e "${BLUE}Creating installation directory...${NC}"
-    mkdir -p "$INSTALL_DIR"
+    # Clone repository (only if not running from repo)
+    if [ "$RUNNING_FROM_REPO" != true ]; then
+        echo -e "${BLUE}Creating installation directory...${NC}"
+        mkdir -p "$INSTALL_DIR"
 
-    # Clone repository
-    echo -e "${BLUE}Cloning repository...${NC}"
-    git clone "$REPO_URL" "$INSTALL_DIR" --quiet
+        echo -e "${BLUE}Cloning repository...${NC}"
+        git clone "$REPO_URL" "$INSTALL_DIR" --quiet
+    fi
 
     # Set up Python virtual environment
     echo -e "${BLUE}Setting up Python virtual environment...${NC}"
@@ -335,152 +369,108 @@ if [ "$SKIP_CLONE" != "true" ]; then
     fi
 fi
 
-# Ask about sending to remote server
-echo ""
-echo -e "${BLUE}Do you want to send your conversations to the remote server?${NC}"
-echo -e "${YELLOW}Note: Conversations are always saved locally to SQLite.${NC}"
-read -p "Send to remote server? (Y/n): " -n 1 -r </dev/tty
-echo
-if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    ENABLE_REMOTE=true
-else
-    ENABLE_REMOTE=false
-fi
+# Create wrapper script for vibe-check command
+echo -e "${BLUE}Setting up vibe-check command...${NC}"
+VIBE_CHECK_BIN="$INSTALL_DIR/vibe-check"
 
-# Get username and register if remote is enabled
-if [ "$ENABLE_REMOTE" = true ]; then
-    echo ""
-    echo -e "${BLUE}Creating your API credentials...${NC}"
-    while true; do
-        read -p "Enter your desired username: " USERNAME </dev/tty
-        if [ -z "$USERNAME" ]; then
-            echo -e "${RED}Username cannot be empty. Please try again.${NC}"
-            continue
-        fi
-        # Sanitize username: only allow alphanumeric, underscore, hyphen
-        if [[ ! "$USERNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            echo -e "${RED}Username can only contain letters, numbers, underscores, and hyphens.${NC}"
-            continue
-        fi
-        if [ ${#USERNAME} -gt 32 ]; then
-            echo -e "${RED}Username must be 32 characters or less.${NC}"
-            continue
-        fi
-        break
-    done
-
-    # Register user and get API key
-    echo -e "${BLUE}Registering user '$USERNAME'...${NC}"
-    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$API_URL/create-token" \
-        -H "Content-Type: application/json" \
-        -d "{\"username\":\"$USERNAME\"}")
-
-    HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-    BODY=$(echo "$RESPONSE" | sed '$d')
-
-    if [ "$HTTP_CODE" != "201" ]; then
-        echo -e "${RED}✗ Failed to create API token${NC}"
-        echo -e "${RED}Error: $BODY${NC}"
-        exit 1
-    fi
-
-    API_KEY=$(echo "$BODY" | grep -o '"api_key":"[^"]*' | cut -d'"' -f4)
-
-    if [ -z "$API_KEY" ]; then
-        echo -e "${RED}✗ Failed to extract API key from response${NC}"
-        exit 1
-    fi
-
-    echo -e "${GREEN}✓ User registered successfully!${NC}"
-    echo -e "${GREEN}  Username: $USERNAME${NC}"
-    echo -e "${GREEN}  API Key: $API_KEY${NC}"
-else
-    USERNAME=""
-    API_KEY=""
-fi
-
-# Create config.json
-echo -e "${BLUE}Creating configuration file...${NC}"
-cat > "$INSTALL_DIR/config.json" <<EOF
-{
-  "api": {
-    "enabled": $ENABLE_REMOTE,
-    "url": "$API_URL",
-    "api_key": "$API_KEY",
-    "username": "$USERNAME"
-  },
-  "sqlite": {
-    "enabled": true,
-    "database_path": "~/.vibe-check/vibe_check.db",
-    "user_name": "$USERNAME"
-  },
-  "monitor": {
-    "conversation_dir": "~/.claude/projects"
-  }
-}
-EOF
-
-echo -e "${GREEN}✓ Configuration saved to $INSTALL_DIR/config.json${NC}"
-
-# Ask about skipping backlog
-echo ""
-read -p "Do you want to skip uploading existing conversation history? (Y/n): " -n 1 -r </dev/tty
-echo
-if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    SKIP_BACKLOG="--skip-backlog"
-else
-    SKIP_BACKLOG=""
-fi
-
-# Create a start script for convenience
-cat > "$INSTALL_DIR/start.sh" <<'EOF'
+# Create wrapper script that uses the correct install dir
+cat > "$VIBE_CHECK_BIN" <<WRAPPER
 #!/bin/bash
-cd "$(dirname "$0")"
-source venv/bin/activate
-python vibe-check.py "$@"
-EOF
+INSTALL_DIR="$INSTALL_DIR"
+source "\$INSTALL_DIR/venv/bin/activate"
+exec python "\$INSTALL_DIR/vibe-check.py" "\$@"
+WRAPPER
+chmod +x "$VIBE_CHECK_BIN"
 
-chmod +x "$INSTALL_DIR/start.sh"
+# Add to PATH if needed (skip for repo installs - developers manage their own PATH)
+if [ "$RUNNING_FROM_REPO" != true ]; then
+    if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+        echo -e "${YELLOW}Adding $INSTALL_DIR to your PATH...${NC}"
 
-# Make uninstall.sh easily accessible (if it exists)
-if [ -f "$INSTALL_DIR/uninstall.sh" ]; then
-    chmod +x "$INSTALL_DIR/uninstall.sh"
+        # Detect shell config file
+        SHELL_CONFIG=""
+        if [ -f "$HOME/.zshrc" ]; then
+            SHELL_CONFIG="$HOME/.zshrc"
+        elif [ -f "$HOME/.bashrc" ]; then
+            SHELL_CONFIG="$HOME/.bashrc"
+        elif [ -f "$HOME/.bash_profile" ]; then
+            SHELL_CONFIG="$HOME/.bash_profile"
+        fi
+
+        if [ -n "$SHELL_CONFIG" ]; then
+            # Check if already in config
+            if ! grep -q "/.vibe-check" "$SHELL_CONFIG" 2>/dev/null; then
+                echo "" >> "$SHELL_CONFIG"
+                echo "# Vibe Check" >> "$SHELL_CONFIG"
+                echo "export PATH=\"\$HOME/.vibe-check:\$PATH\"" >> "$SHELL_CONFIG"
+                echo -e "${GREEN}✓ Added to $SHELL_CONFIG${NC}"
+                echo -e "${YELLOW}  Run 'source $SHELL_CONFIG' or restart your terminal${NC}"
+            fi
+        fi
+
+        # Also add to current session
+        export PATH="$INSTALL_DIR:$PATH"
+    fi
+    echo -e "${GREEN}✓ vibe-check command available${NC}"
+else
+    echo -e "${GREEN}✓ Run with: $INSTALL_DIR/vibe-check${NC}"
+fi
+
+# Authentication
+if [ "$NEED_AUTH" = true ]; then
+    echo ""
+    echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║   Authentication Required             ║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${YELLOW}You need to authenticate to sync your conversations.${NC}"
+    echo -e "${YELLOW}This will open a browser to complete login.${NC}"
+    echo ""
+
+    # Run the auth login flow
+    cd "$INSTALL_DIR"
+    source venv/bin/activate
+
+    if python vibe-check.py auth login; then
+        echo ""
+        echo -e "${GREEN}✓ Authentication successful!${NC}"
+    else
+        echo ""
+        echo -e "${YELLOW}⚠ Authentication skipped or failed.${NC}"
+        echo -e "${YELLOW}  You can authenticate later with: vibe-check auth login${NC}"
+    fi
 fi
 
 # Installation complete
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   🧜 Installation Complete! 🎉        ║${NC}"
+echo -e "${GREEN}║   Installation Complete!              ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
 echo ""
-echo -e "${BLUE}To start monitoring:${NC}"
-echo -e "  cd $INSTALL_DIR"
-echo -e "  source venv/bin/activate"
-echo -e "  python vibe-check.py $SKIP_BACKLOG"
-echo ""
-echo -e "${BLUE}Or use the convenience script:${NC}"
-echo -e "  $INSTALL_DIR/start.sh $SKIP_BACKLOG"
-echo ""
-echo -e "${BLUE}To run in the background:${NC}"
-echo -e "  nohup $INSTALL_DIR/start.sh $SKIP_BACKLOG > $INSTALL_DIR/monitor.log 2>&1 &"
-echo ""
-if [ "$ENABLE_REMOTE" = true ] && [ -n "$USERNAME" ]; then
-    echo -e "${BLUE}View your stats at:${NC}"
-    echo -e "  ${BLUE}https://vibecheck.wanderingstan.com/stats.php?user=$USERNAME${NC}"
-    echo ""
+
+if [ "$RUNNING_FROM_REPO" = true ]; then
+    echo -e "${BLUE}Commands (from repo):${NC}"
+    echo -e "  $INSTALL_DIR/vibe-check start      # Start monitoring"
+    echo -e "  $INSTALL_DIR/vibe-check stop       # Stop monitoring"
+    echo -e "  $INSTALL_DIR/vibe-check status     # Check status"
+    echo -e "  $INSTALL_DIR/vibe-check auth login # Re-authenticate"
+else
+    echo -e "${BLUE}Commands:${NC}"
+    echo -e "  vibe-check start     # Start monitoring in background"
+    echo -e "  vibe-check stop      # Stop monitoring"
+    echo -e "  vibe-check status    # Check status"
+    echo -e "  vibe-check auth login # Re-authenticate"
 fi
+echo ""
 
 # Ask if user wants to start now
 read -p "Do you want to start monitoring now? (Y/n): " -n 1 -r </dev/tty
 echo
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    echo -e "${GREEN}🧜 Starting monitor...${NC}"
+    echo -e "${GREEN}Starting monitor...${NC}"
     echo ""
-    # Clean up log file on success before exec
     rm -f "$INSTALL_LOG"
-    exec "$INSTALL_DIR/start.sh" $SKIP_BACKLOG </dev/tty
+    exec "$VIBE_CHECK_BIN" start </dev/tty
 else
-    # Clean up log file on success
-    echo -e "${BLUE}Installation log: $INSTALL_LOG (you can delete this)${NC}"
     rm -f "$INSTALL_LOG"
 fi
