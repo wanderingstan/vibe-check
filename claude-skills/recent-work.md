@@ -1,6 +1,9 @@
-# Recent Claude Work
+---
+name: recent-work
+description: Show recent Claude Code sessions and work history. Use when user says "what have I been working on", "recent work", "what did I do today", or "show recent sessions".
+---
 
-**Trigger:** "what have I been working on", "recent work", "what did I do today", "show recent sessions", "my recent claude sessions"
+# Recent Claude Work
 
 **Purpose:** Show recent Claude Code sessions and what you've been working on
 

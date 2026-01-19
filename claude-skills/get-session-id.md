@@ -1,6 +1,9 @@
-# Get Current Session ID
+---
+name: get-session-id
+description: Get the current Claude Code session ID and log file path. Use when user says "get session id", "what is my session id", "current session", "session info", or "what session is this".
+---
 
-**Trigger:** "get session id", "what is my session id", "current session", "session info", "get conversation id", "what session is this"
+# Get Current Session ID
 
 **Purpose:** Retrieve the current Claude Code session ID and log file path by emitting a unique marker and querying the vibe-check database.
 

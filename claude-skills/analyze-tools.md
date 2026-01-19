@@ -1,6 +1,9 @@
-# Analyze Claude Tool Usage
+---
+name: analyze-tools
+description: Analyze which tools Claude uses most frequently. Use when user says "what tools do I use most", "tool usage stats", "analyze my claude tools", or "which tools does claude use".
+---
 
-**Trigger:** "what tools do I use most", "tool usage stats", "analyze my claude tools", "which tools does claude use"
+# Analyze Claude Tool Usage
 
 **Purpose:** Analyze which tools Claude uses most frequently in conversations
 

@@ -1,6 +1,9 @@
-# View Vibe Check Stats Online
+---
+name: view-stats
+description: Open the Vibe Check stats page in browser. Use when user says "vibe stats", "view my stats", "open stats", or "stats page".
+---
 
-**Trigger:** When user says "vibe stats", "view my stats", "open stats", "show my vibe check stats", or "stats page"
+# View Vibe Check Stats Online
 
 **Purpose:** Open the user's Vibe Check stats page in their default browser
 

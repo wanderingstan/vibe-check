@@ -1,6 +1,9 @@
-# Search Claude Conversations
+---
+name: search-conversations
+description: Search through Claude Code conversation history. Use when user says "search my conversations", "find when I talked about X", "what did claude say about Y", or "search claude history".
+---
 
-**Trigger:** "search my conversations", "find when I talked about X", "what did claude say about Y", "search claude history"
+# Search Claude Conversations
 
 **Purpose:** Search through Claude Code conversation history stored in the local vibe-check database
 

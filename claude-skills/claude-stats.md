@@ -1,6 +1,9 @@
-# Claude Usage Statistics
+---
+name: claude-stats
+description: Query Claude Code usage statistics from the vibe-check database. Use when user says "claude stats", "usage stats", "my claude usage", or "how much have I used claude".
+---
 
-**Trigger:** When user says "claude stats", "usage stats", "my claude usage", or "how much have I used claude"
+# Claude Usage Statistics
 
 **Purpose:** Query the local vibe-check database to show Claude Code usage statistics
 
