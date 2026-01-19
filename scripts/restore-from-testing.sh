@@ -77,10 +77,45 @@ fi
 
 echo ""
 
-# Stop any running service first
+# Stop any running service first (check both PID-based and brew services)
 echo "Stopping any running vibe-check service..."
+
+# First check for PID-based process (started via 'vibe-check start')
+PID_FILE="$DATA_DIR/.monitor.pid"
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE" 2>/dev/null)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        echo "  Stopping PID-based process ($PID)..."
+        kill -TERM "$PID" 2>/dev/null || true
+        # Wait up to 5 seconds for graceful shutdown
+        for i in $(seq 1 50); do
+            if ! kill -0 "$PID" 2>/dev/null; then
+                break
+            fi
+            sleep 0.1
+        done
+        # Force kill if still running
+        if kill -0 "$PID" 2>/dev/null; then
+            kill -9 "$PID" 2>/dev/null || true
+            sleep 0.5
+        fi
+        rm -f "$PID_FILE"
+        print_status "PID-based process stopped"
+    else
+        rm -f "$PID_FILE"  # Clean up stale PID file
+    fi
+fi
+
+# Also check for brew services managed process
 brew services stop vibe-check 2>/dev/null || true
 launchctl unload "$LAUNCHAGENT_DIR/com.vibecheck.monitor.plist" 2>/dev/null || true
+
+# Verify nothing is still running
+if pgrep -f "vibe-check.py" >/dev/null 2>&1; then
+    print_warning "vibe-check process still detected, attempting to stop..."
+    pkill -f "vibe-check.py" 2>/dev/null || true
+    sleep 1
+fi
 
 # Restore data directory
 if [ -d "$BACKUP_DIR/data" ] && [ "$(ls -A "$BACKUP_DIR/data" 2>/dev/null)" ]; then

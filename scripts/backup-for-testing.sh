@@ -69,14 +69,50 @@ fi
 
 echo ""
 
-# Stop service
+# Stop service (check both PID-based and brew services)
 echo "Stopping vibe-check service..."
-if brew services list | grep -q "vibe-check.*started"; then
-    brew services stop vibe-check 2>/dev/null || true
-    print_status "Service stopped"
-else
-    print_warning "Service was not running"
+
+# First check for PID-based process (started via 'vibe-check start')
+PID_FILE="$DATA_DIR/.monitor.pid"
+if [ -f "$PID_FILE" ]; then
+    PID=$(cat "$PID_FILE" 2>/dev/null)
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        echo "  Stopping PID-based process ($PID)..."
+        kill -TERM "$PID" 2>/dev/null || true
+        # Wait up to 5 seconds for graceful shutdown
+        for i in $(seq 1 50); do
+            if ! kill -0 "$PID" 2>/dev/null; then
+                break
+            fi
+            sleep 0.1
+        done
+        # Force kill if still running
+        if kill -0 "$PID" 2>/dev/null; then
+            print_warning "Force killing process..."
+            kill -9 "$PID" 2>/dev/null || true
+            sleep 0.5
+        fi
+        rm -f "$PID_FILE"
+        print_status "PID-based process stopped"
+    else
+        rm -f "$PID_FILE"  # Clean up stale PID file
+    fi
 fi
+
+# Also check for brew services managed process
+if brew services list 2>/dev/null | grep -q "vibe-check.*started"; then
+    brew services stop vibe-check 2>/dev/null || true
+    print_status "Brew service stopped"
+fi
+
+# Verify nothing is still running
+if pgrep -f "vibe-check.py" >/dev/null 2>&1; then
+    print_warning "vibe-check process still detected, attempting to stop..."
+    pkill -f "vibe-check.py" 2>/dev/null || true
+    sleep 1
+fi
+
+print_status "Service stop complete"
 
 # Create backup directory structure
 mkdir -p "$BACKUP_DIR/data"

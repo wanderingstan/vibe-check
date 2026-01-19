@@ -832,8 +832,63 @@ def get_pid_file() -> Path:
 
 
 def get_log_file() -> Path:
-    """Get the path to the log file."""
+    """Get the path to the log file (for daemon mode)."""
     return get_data_dir() / "monitor.log"
+
+
+def is_brew_service_running() -> bool:
+    """Check if vibe-check is running as a Homebrew service."""
+    try:
+        result = subprocess.run(
+            ["brew", "services", "list"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if "vibe-check" in line and "started" in line.lower():
+                    return True
+    except FileNotFoundError:
+        pass
+    return False
+
+
+def get_brew_log_dir() -> Path:
+    """Get the Homebrew log directory."""
+    return Path("/opt/homebrew/var/log")
+
+
+def get_active_log_paths() -> list[tuple[Path, str]]:
+    """Get the active log file paths based on how vibe-check is running.
+
+    Returns a list of (path, description) tuples.
+    """
+    logs = []
+
+    # Check if running as brew service
+    if is_brew_service_running():
+        brew_log_dir = get_brew_log_dir()
+        error_log = brew_log_dir / "vibe-check.error.log"
+        stdout_log = brew_log_dir / "vibe-check.log"
+
+        if error_log.exists():
+            logs.append((error_log, "brew service log"))
+        if stdout_log.exists() and stdout_log.stat().st_size > 0:
+            logs.append((stdout_log, "brew service stdout"))
+
+    # Also check daemon mode log
+    daemon_log = get_log_file()
+    if daemon_log.exists():
+        logs.append((daemon_log, "daemon log"))
+
+    # If nothing found, return expected paths
+    if not logs:
+        if is_brew_service_running():
+            logs.append((get_brew_log_dir() / "vibe-check.error.log", "brew service log (not created yet)"))
+        else:
+            logs.append((get_log_file(), "daemon log (not created yet)"))
+
+    return logs
 
 
 def is_running() -> Optional[int]:
@@ -1108,19 +1163,21 @@ def cmd_status(args):
     else:
         print("   Database: (SQLite disabled or not configured)")
 
-    # Log file
-    log_path = get_log_file()
-    if log_path.exists():
-        size_bytes = log_path.stat().st_size
-        if size_bytes < 1024:
-            size_str = f"{size_bytes} B"
-        elif size_bytes < 1024 * 1024:
-            size_str = f"{size_bytes / 1024:.1f} KB"
+    # Log file(s) - show based on how service is running
+    log_paths = get_active_log_paths()
+    for i, (log_path, description) in enumerate(log_paths):
+        prefix = "Log:" if i == 0 else "    "
+        if log_path.exists():
+            size_bytes = log_path.stat().st_size
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.1f} KB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
+            print(f"   {prefix:8} {log_path} ({size_str})")
         else:
-            size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-        print(f"   Log:      {log_path} ({size_str})")
-    else:
-        print(f"   Log:      {log_path} (not created yet)")
+            print(f"   {prefix:8} {log_path} ({description})")
 
     # PID file
     pid_path = get_pid_file()
@@ -1136,10 +1193,21 @@ def cmd_status(args):
 
 def cmd_logs(args):
     """View vibe-check process logs."""
-    log_file = get_log_file()
+    log_paths = get_active_log_paths()
 
-    if not log_file.exists():
-        print(f"⚠️  No log file found at {log_file}")
+    # Find first existing log file
+    log_file = None
+    for path, description in log_paths:
+        if path.exists() and path.stat().st_size > 0:
+            log_file = path
+            break
+
+    if not log_file:
+        # Show what we looked for
+        paths_checked = [str(p) for p, _ in log_paths]
+        print(f"⚠️  No log files found. Checked:")
+        for p in paths_checked:
+            print(f"   - {p}")
         return
 
     # Show last 50 lines
