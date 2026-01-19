@@ -505,6 +505,36 @@ SERVICE
     fi
 fi
 
+# Install Claude Code skills
+echo -e "${BLUE}Installing Claude Code skills...${NC}"
+SKILLS_SRC="$INSTALL_DIR/claude-skills"
+SKILLS_DEST="$HOME/.claude/skills"
+
+if [ -d "$SKILLS_SRC" ]; then
+    mkdir -p "$SKILLS_DEST"
+
+    # Copy skill files (exclude README and HOW-IT-WORKS)
+    for skill in "$SKILLS_SRC"/*.md; do
+        filename=$(basename "$skill")
+        # Skip documentation files
+        if [ "$filename" = "README.md" ] || [ "$filename" = "HOW-IT-WORKS.md" ]; then
+            continue
+        fi
+
+        dest="$SKILLS_DEST/$filename"
+        # Backup existing file if present
+        if [ -f "$dest" ]; then
+            backup="$SKILLS_DEST/.backup-$(date +%s)-$filename"
+            cp "$dest" "$backup"
+        fi
+        cp "$skill" "$dest"
+    done
+
+    echo -e "${GREEN}✓ Claude Code skills installed to ~/.claude/skills/${NC}"
+else
+    echo -e "${YELLOW}⚠ Skills directory not found, skipping skills installation${NC}"
+fi
+
 # Installation complete
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"

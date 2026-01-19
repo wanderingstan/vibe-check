@@ -42,7 +42,8 @@ This will:
 
 - Install Vibe Check to `~/.vibe-check`
 - Open a browser for authentication
-- Set up the configuration
+- Install Claude Code skills to `~/.claude/skills/`
+- Set up auto-start service (systemd on Linux, launchd on macOS)
 - Start monitoring your Claude Code conversations
 
 ### From Git Repository
@@ -55,7 +56,7 @@ cd vibe-check
 ./scripts/install.sh
 ```
 
-This runs vibe-check directly from the repo (no copying to `~/.vibe-check`).
+This runs vibe-check directly from the repo (no copying to `~/.vibe-check`). Skills are still installed to `~/.claude/skills/`.
 
 ## Updating
 
