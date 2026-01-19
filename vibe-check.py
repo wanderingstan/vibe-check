@@ -931,19 +931,11 @@ def daemonize():
 
 
 def cmd_start(args):
-    """Start the monitor in daemon mode."""
+    """Start the monitor in daemon mode (or foreground with --foreground)."""
     pid = is_running()
     if pid:
         print(f"✅ Monitor is already running (PID: {pid})")
         return
-
-    print("🧜 Starting monitor in background...")
-
-    # Daemonize the process
-    daemonize()
-
-    # Write PID file
-    write_pid_file()
 
     # Set up signal handlers
     def signal_handler(signum, frame):
@@ -951,12 +943,39 @@ def cmd_start(args):
         remove_pid_file()
         sys.exit(0)
 
-    signal.signal(signal.SIGTERM, signal_handler)
-    signal.signal(signal.SIGINT, signal_handler)
+    if getattr(args, 'foreground', False):
+        # Foreground mode for systemd/launchd
+        print("🧜 Starting monitor in foreground...")
 
-    # Run the monitor (logging is already set up by daemonize())
-    logger.info("Monitor started")
-    run_monitor(args)
+        # Set up logging to stdout for foreground mode
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+            handlers=[logging.StreamHandler(sys.stdout)]
+        )
+
+        write_pid_file()
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        logger.info("Monitor started (foreground mode)")
+        run_monitor(args)
+    else:
+        # Background/daemon mode
+        print("🧜 Starting monitor in background...")
+
+        # Daemonize the process
+        daemonize()
+
+        # Write PID file
+        write_pid_file()
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+
+        # Run the monitor (logging is already set up by daemonize())
+        logger.info("Monitor started")
+        run_monitor(args)
 
 
 def cmd_stop(args):
@@ -1433,6 +1452,10 @@ Examples:
     # Start command
     parser_start = subparsers.add_parser(
         "start", help="Start vibe-check process in background"
+    )
+    parser_start.add_argument(
+        "--foreground", "-f", action="store_true",
+        help="Run in foreground (for systemd/launchd)"
     )
     parser_start.set_defaults(func=cmd_start)
 

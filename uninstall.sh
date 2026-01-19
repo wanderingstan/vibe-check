@@ -57,6 +57,24 @@ else
     echo -e "${GREEN}✓ No running monitor processes found${NC}"
 fi
 
+# Stop and remove systemd service (Linux)
+if [ -f "$HOME/.config/systemd/user/vibe-check.service" ]; then
+    echo -e "${BLUE}Removing systemd service...${NC}"
+    systemctl --user stop vibe-check 2>/dev/null || true
+    systemctl --user disable vibe-check 2>/dev/null || true
+    rm -f "$HOME/.config/systemd/user/vibe-check.service"
+    systemctl --user daemon-reload 2>/dev/null || true
+    echo -e "${GREEN}✓ Systemd service removed${NC}"
+fi
+
+# Stop and remove launchd service (macOS)
+if [ -f "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" ]; then
+    echo -e "${BLUE}Removing LaunchAgent...${NC}"
+    launchctl unload "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" 2>/dev/null || true
+    rm -f "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist"
+    echo -e "${GREEN}✓ LaunchAgent removed${NC}"
+fi
+
 # Remove installation directory
 echo -e "${BLUE}Removing installation directory...${NC}"
 rm -rf "$INSTALL_DIR"

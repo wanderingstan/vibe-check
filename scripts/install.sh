@@ -441,6 +441,70 @@ if [ "$NEED_AUTH" = true ]; then
     fi
 fi
 
+# Set up auto-start service (skip for repo installs)
+if [ "$RUNNING_FROM_REPO" != true ]; then
+    if [ "$OS" = "macos" ]; then
+        # macOS: Create launchd plist
+        echo -e "${BLUE}Setting up auto-start service...${NC}"
+        mkdir -p "$HOME/Library/LaunchAgents"
+
+        cat > "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.vibecheck.monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$INSTALL_DIR/vibe-check</string>
+        <string>start</string>
+        <string>--foreground</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$INSTALL_DIR/data/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>$INSTALL_DIR/data/launchd.error.log</string>
+</dict>
+</plist>
+PLIST
+
+        # Ensure data directory exists for logs
+        mkdir -p "$INSTALL_DIR/data"
+
+        launchctl load "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" 2>/dev/null || true
+        echo -e "${GREEN}✓ LaunchAgent installed (starts on login)${NC}"
+
+    elif command -v systemctl &> /dev/null; then
+        # Linux: Create systemd user service
+        echo -e "${BLUE}Setting up auto-start service...${NC}"
+        mkdir -p "$HOME/.config/systemd/user"
+
+        cat > "$HOME/.config/systemd/user/vibe-check.service" <<SERVICE
+[Unit]
+Description=Vibe Check - Claude Code Monitor
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_DIR/vibe-check start --foreground
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+SERVICE
+
+        systemctl --user daemon-reload
+        systemctl --user enable vibe-check 2>/dev/null || true
+        echo -e "${GREEN}✓ Systemd service installed (starts on login)${NC}"
+    fi
+fi
+
 # Installation complete
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
