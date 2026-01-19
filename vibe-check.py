@@ -1134,6 +1134,19 @@ def cmd_status(args):
             pass
     else:
         print("⚠️  vibe-check process is not running")
+        # Suggest how to start based on installation method
+        try:
+            result = subprocess.run(
+                ["brew", "list", "vibe-check"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                print("   To start: brew services start vibe-check")
+            else:
+                print("   To start: vibe-check start")
+        except FileNotFoundError:
+            print("   To start: vibe-check start")
 
     # Show file locations
     print("\n📁 File locations:")
