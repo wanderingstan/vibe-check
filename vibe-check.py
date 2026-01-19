@@ -1262,6 +1262,35 @@ def cmd_status(args):
     else:
         print(f"   PID:      {pid_path} (not created)")
 
+    # Remote sync status
+    print("\n☁️  Remote sync:")
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                config = json.load(f)
+            api_config = config.get("api", {})
+            api_url = api_config.get("url", "")
+            api_key = api_config.get("api_key", "")
+            api_enabled = api_config.get("enabled", False)
+
+            if api_key and api_enabled:
+                print(f"   ✅ Enabled")
+                print(f"   Server: {api_url}")
+                print(f"   API Key: {api_key[:8]}...{api_key[-4:]}")
+            elif api_key and not api_enabled:
+                print(f"   ⚠️  Authenticated but disabled")
+                print(f"   Server: {api_url}")
+                print("   To enable: set api.enabled=true in config")
+            else:
+                print("   ❌ Not configured")
+                print("   To enable: vibe-check auth login")
+        except (json.JSONDecodeError, KeyError):
+            print("   ⚠️  Config file invalid")
+            print("   To fix: vibe-check auth login")
+    else:
+        print("   ❌ Not configured")
+        print("   To enable: vibe-check auth login")
+
     # Exit with error if not running
     if not pid:
         sys.exit(1)
