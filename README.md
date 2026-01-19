@@ -216,25 +216,17 @@ python vibe-check.py --skip-skills-check
 
 ## Daemon Management
 
-### With Homebrew
-
-If you installed via Homebrew, use `brew services`:
+Use the unified commands for all installations:
 
 ```bash
-brew services start vibe-check    # Start in background
-brew services stop vibe-check     # Stop
-brew services restart vibe-check  # Restart
-```
-
-Or use the built-in daemon commands:
-
-```bash
-vibe-check start     # Start in background
+vibe-check start     # Start in background (auto-starts on boot for Homebrew)
 vibe-check stop      # Stop
 vibe-check restart   # Restart
 vibe-check status    # Check status
 vibe-check logs      # View logs
 ```
+
+For Homebrew installs, these commands automatically use `brew services` under the hood, enabling auto-start on boot.
 
 ### Manual Installation
 
@@ -301,7 +293,7 @@ All data lives in `/opt/homebrew/var/vibe-check/`:
 | **PID file** | `/opt/homebrew/var/vibe-check/.monitor.pid`  |
 | **Log file** | `/opt/homebrew/var/vibe-check/monitor.log`   |
 
-When running via `brew services`, additional logs go to:
+When running via `vibe-check start` (which uses brew services), additional logs go to:
 
 - `/opt/homebrew/var/log/vibe-check.log`
 - `/opt/homebrew/var/log/vibe-check.error.log`

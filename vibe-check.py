@@ -375,6 +375,28 @@ class SQLiteManager:
         """
         )
 
+        # Create view for events with messages (filters out null/empty messages)
+        self.cursor.execute(
+            """
+            CREATE VIEW IF NOT EXISTS conversation_events_with_messages AS
+            SELECT
+                event_timestamp,
+                event_type,
+                event_message,
+                event_uuid,
+                event_session_id,
+                event_git_branch,
+                git_commit_hash,
+                file_name,
+                line_number,
+                id
+            FROM conversation_events
+            WHERE event_message IS NOT NULL
+              AND event_message != 'null'
+              AND event_message != ''
+        """
+        )
+
         self.connection.commit()
 
     def insert_event(
@@ -930,6 +952,39 @@ def is_running() -> Optional[int]:
     return None
 
 
+def is_homebrew_service() -> bool:
+    """Check if vibe-check is installed via Homebrew and the service is available."""
+    try:
+        result = subprocess.run(
+            ["brew", "services", "list"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and "vibe-check" in result.stdout:
+            return True
+    except FileNotFoundError:
+        # brew command not found, not a brew installation
+        pass
+    return False
+
+
+def is_homebrew_service_running() -> bool:
+    """Check if vibe-check is currently running as a Homebrew service."""
+    try:
+        result = subprocess.run(
+            ["brew", "services", "list"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if "vibe-check" in line and "started" in line.lower():
+                    return True
+    except FileNotFoundError:
+        pass
+    return False
+
+
 def write_pid_file():
     """Write current process PID to file."""
     pid_file = get_pid_file()
@@ -992,6 +1047,16 @@ def cmd_start(args):
         print(f"✅ Monitor is already running (PID: {pid})")
         return
 
+    # If homebrew install and not forcing foreground, use brew services
+    if is_homebrew_service() and not getattr(args, 'foreground', False):
+        print("🧜 Starting via Homebrew service...")
+        result = subprocess.run(["brew", "services", "start", "vibe-check"])
+        if result.returncode == 0:
+            print("✅ vibe-check service started (auto-starts on boot)")
+        else:
+            print("❌ Failed to start Homebrew service")
+        return
+
     # Set up signal handlers
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, stopping monitor...")
@@ -1016,7 +1081,7 @@ def cmd_start(args):
         logger.info("Monitor started (foreground mode)")
         run_monitor(args)
     else:
-        # Background/daemon mode
+        # Background/daemon mode (non-homebrew install)
         print("🧜 Starting monitor in background...")
 
         # Daemonize the process
@@ -1035,28 +1100,20 @@ def cmd_start(args):
 
 def cmd_stop(args):
     """Stop the monitor daemon."""
+    # Check if running as a brew service first
+    if is_homebrew_service_running():
+        print("🧜 Stopping Homebrew service...")
+        result = subprocess.run(["brew", "services", "stop", "vibe-check"])
+        if result.returncode == 0:
+            print("✅ vibe-check service stopped (auto-start disabled)")
+        else:
+            print("❌ Failed to stop Homebrew service")
+        return
+
     pid = is_running()
     if not pid:
         print("⚠️  Monitor is not running")
         return
-
-    # Check if running as a brew service (launchd will restart it if we just kill it)
-    try:
-        result = subprocess.run(
-            ["brew", "services", "list"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0 and "vibe-check" in result.stdout:
-            # Parse the output to check if it's started
-            for line in result.stdout.splitlines():
-                if "vibe-check" in line and "started" in line.lower():
-                    print("ℹ️  vibe-check is running as a Homebrew service.")
-                    print("   Use: brew services stop vibe-check")
-                    return
-    except FileNotFoundError:
-        # brew command not found, not a brew installation
-        pass
 
     print(f"🧜 Stopping monitor (PID: {pid})...")
 
@@ -1087,6 +1144,16 @@ def cmd_stop(args):
 
 def cmd_restart(args):
     """Restart the vibe-check process daemon."""
+    # If homebrew service, use brew services restart directly
+    if is_homebrew_service_running() or is_homebrew_service():
+        print("🧜 Restarting Homebrew service...")
+        result = subprocess.run(["brew", "services", "restart", "vibe-check"])
+        if result.returncode == 0:
+            print("✅ vibe-check service restarted")
+        else:
+            print("❌ Failed to restart Homebrew service")
+        return
+
     cmd_stop(args)
     time.sleep(1)
     cmd_start(args)
@@ -1119,8 +1186,16 @@ def get_sqlite_db_path() -> Optional[Path]:
 def cmd_status(args):
     """Check vibe-check process status."""
     pid = is_running()
+    is_brew_service = is_homebrew_service_running()
+
     if pid:
-        print(f"✅ vibe-check process is running (PID: {pid})")
+        if is_brew_service:
+            print(f"✅ vibe-check is running as Homebrew service (PID: {pid})")
+            print("   Auto-starts on boot: yes")
+        else:
+            print(f"✅ vibe-check process is running (PID: {pid})")
+            if is_homebrew_service():
+                print("   Auto-starts on boot: no (use 'vibe-check start' to enable)")
         # Show process info if possible
         try:
             result = subprocess.run(
@@ -1134,19 +1209,7 @@ def cmd_status(args):
             pass
     else:
         print("⚠️  vibe-check process is not running")
-        # Suggest how to start based on installation method
-        try:
-            result = subprocess.run(
-                ["brew", "list", "vibe-check"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                print("   To start: brew services start vibe-check")
-            else:
-                print("   To start: vibe-check start")
-        except FileNotFoundError:
-            print("   To start: vibe-check start")
+        print("   To start: vibe-check start")
 
     # Show file locations
     print("\n📁 File locations:")

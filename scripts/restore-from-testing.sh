@@ -8,6 +8,7 @@
 #   ./scripts/restore-from-testing.sh                     # Restore from ~/.vibe-check-backup/
 #   ./scripts/restore-from-testing.sh /path/to/backup     # Restore from custom directory
 #   ./scripts/restore-from-testing.sh -k [backup_dir]     # Keep backup after restore
+#   ./scripts/restore-from-testing.sh --no-merge          # Skip merging test events into backup
 
 set -e
 
@@ -16,6 +17,7 @@ LOG_DIR="/opt/homebrew/var/log"
 LAUNCHAGENT_DIR="$HOME/Library/LaunchAgents"
 SKILLS_DIR="$HOME/.claude/skills"
 KEEP_BACKUP=false
+MERGE_EVENTS=true
 
 # Colors
 RED='\033[0;31m'
@@ -27,14 +29,29 @@ print_status() { echo -e "${GREEN}✓${NC} $1"; }
 print_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
 print_error() { echo -e "${RED}✗${NC} $1"; }
 
-# Parse args
-while getopts "k" opt; do
-    case $opt in
-        k) KEEP_BACKUP=true ;;
-        *) echo "Usage: $0 [-k] [backup_dir]"; exit 1 ;;
+# Parse args (handle long options first)
+POSITIONAL_ARGS=()
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --no-merge)
+            MERGE_EVENTS=false
+            shift
+            ;;
+        -k)
+            KEEP_BACKUP=true
+            shift
+            ;;
+        -*)
+            echo "Usage: $0 [-k] [--no-merge] [backup_dir]"
+            exit 1
+            ;;
+        *)
+            POSITIONAL_ARGS+=("$1")
+            shift
+            ;;
     esac
 done
-shift $((OPTIND-1))
+set -- "${POSITIONAL_ARGS[@]}"
 
 # Set backup directory (positional arg or default)
 BACKUP_DIR="${1:-$HOME/.vibe-check-backup}"
@@ -62,10 +79,19 @@ echo ""
 # Confirm before proceeding
 echo "This will:"
 echo "  1. Stop any running vibe-check service"
-echo "  2. Restore data, logs, service config, and skills from backup"
-echo "  3. Start the vibe-check service"
-if [ "$KEEP_BACKUP" = false ]; then
-    echo "  4. Remove the backup directory"
+if [ "$MERGE_EVENTS" = true ]; then
+    echo "  2. Merge conversation_events from current DB into backup"
+    echo "  3. Restore data, logs, service config, and skills from backup"
+    echo "  4. Start the vibe-check service"
+    if [ "$KEEP_BACKUP" = false ]; then
+        echo "  5. Remove the backup directory"
+    fi
+else
+    echo "  2. Restore data, logs, service config, and skills from backup"
+    echo "  3. Start the vibe-check service"
+    if [ "$KEEP_BACKUP" = false ]; then
+        echo "  4. Remove the backup directory"
+    fi
 fi
 echo ""
 read -p "Continue? [y/N] " -n 1 -r
@@ -115,6 +141,51 @@ if pgrep -f "vibe-check.py" >/dev/null 2>&1; then
     print_warning "vibe-check process still detected, attempting to stop..."
     pkill -f "vibe-check.py" 2>/dev/null || true
     sleep 1
+fi
+
+# Merge conversation_events from current (testing) DB into backup before restoring
+CURRENT_DB="$DATA_DIR/vibe_check.db"
+BACKUP_DB="$BACKUP_DIR/data/vibe_check.db"
+
+if [ "$MERGE_EVENTS" = true ] && [ -f "$CURRENT_DB" ] && [ -f "$BACKUP_DB" ]; then
+    echo "Merging conversation_events from testing database..."
+
+    # Count events in current DB before merge
+    CURRENT_COUNT=$(sqlite3 "$CURRENT_DB" "SELECT COUNT(*) FROM conversation_events;" 2>/dev/null || echo "0")
+    BACKUP_COUNT_BEFORE=$(sqlite3 "$BACKUP_DB" "SELECT COUNT(*) FROM conversation_events;" 2>/dev/null || echo "0")
+
+    # Merge: insert events from current DB into backup DB, skipping duplicates by event_uuid
+    sqlite3 "$BACKUP_DB" <<EOF
+ATTACH DATABASE '$CURRENT_DB' AS current_db;
+
+INSERT OR IGNORE INTO conversation_events (
+    file_name, line_number, event_data, user_name, inserted_at
+)
+SELECT
+    file_name, line_number, event_data, user_name, inserted_at
+FROM current_db.conversation_events
+WHERE event_uuid NOT IN (SELECT event_uuid FROM conversation_events WHERE event_uuid IS NOT NULL)
+   OR event_uuid IS NULL;
+
+DETACH DATABASE current_db;
+EOF
+
+    BACKUP_COUNT_AFTER=$(sqlite3 "$BACKUP_DB" "SELECT COUNT(*) FROM conversation_events;" 2>/dev/null || echo "0")
+    MERGED_COUNT=$((BACKUP_COUNT_AFTER - BACKUP_COUNT_BEFORE))
+
+    if [ "$MERGED_COUNT" -gt 0 ]; then
+        print_status "Merged $MERGED_COUNT events from testing database (had $CURRENT_COUNT events)"
+    else
+        print_status "No new events to merge (testing DB had $CURRENT_COUNT events, all duplicates)"
+    fi
+elif [ "$MERGE_EVENTS" = true ]; then
+    if [ ! -f "$CURRENT_DB" ]; then
+        print_warning "No current database to merge from"
+    elif [ ! -f "$BACKUP_DB" ]; then
+        print_warning "No backup database to merge into"
+    fi
+elif [ "$MERGE_EVENTS" = false ]; then
+    print_status "Skipping event merge (--no-merge specified)"
 fi
 
 # Restore data directory

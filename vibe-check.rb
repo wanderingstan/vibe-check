@@ -141,7 +141,7 @@ class VibeCheck < Formula
     ohai "Installed Claude Code skills to ~/.claude/skills/"
 
     # Remind user to start the service
-    opoo "Run 'brew services start vibe-check' to enable auto-start on boot!"
+    opoo "Run 'vibe-check start' to enable monitoring with auto-start on boot!"
   end
 
   service do
@@ -191,7 +191,7 @@ class VibeCheck < Formula
       ║                                                                       ║
       ║  🚀 IMPORTANT: Run this command to start monitoring:                  ║
       ║                                                                       ║
-      ║           brew services start vibe-check                              ║
+      ║                      vibe-check start                                 ║
       ║                                                                       ║
       ╚═══════════════════════════════════════════════════════════════════════╝
 
@@ -201,10 +201,11 @@ class VibeCheck < Formula
         Skills:   ~/.claude/skills/
 
       🛠️  Commands:
-        brew services start vibe-check  # Start & enable auto-start
-        brew services stop vibe-check   # Stop & disable auto-start
-        vibe-check status               # Check if running
-        vibe-check logs                 # View logs
+        vibe-check start    # Start & enable auto-start on boot
+        vibe-check stop     # Stop & disable auto-start
+        vibe-check restart  # Restart the service
+        vibe-check status   # Check if running
+        vibe-check logs     # View logs
 
       🔍 Query your conversations:
         vibe-check-query "SELECT COUNT(*) FROM conversation_events"
