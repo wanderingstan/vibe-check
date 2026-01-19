@@ -8,9 +8,14 @@
 
 ## Database Location
 
-The vibe-check database is located at: `~/.vibe-check/vibe_check.db`
+To find the database location, run:
+```bash
+vibe-check status
+```
 
-If not found there, check: `/Users/wanderingstan/Developer/vibe-check/vibe_check.db`
+The default Homebrew location is: `/opt/homebrew/var/vibe-check/vibe_check.db`
+
+**Note:** If the status shows no PID, vibe-check is not running and the database may be stale. Start it with `vibe-check start`.
 
 ## Important: Use Read-Only Mode
 

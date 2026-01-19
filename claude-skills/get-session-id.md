@@ -8,9 +8,14 @@
 
 ## Database Location
 
-The vibe-check database is located at: `~/.vibe-check/vibe_check.db`
+To find the database location, run:
+```bash
+vibe-check status
+```
 
-If not found there, check: `~/Developer/vibe-check/data/vibe_check.db`
+The default Homebrew location is: `/opt/homebrew/var/vibe-check/vibe_check.db`
+
+**Note:** If the status shows no PID, vibe-check is not running and the database may be stale. Start it with `vibe-check start`.
 
 ## Important: Use Read-Only Mode
 
@@ -102,17 +107,10 @@ This session has been active since [start time if you query for it].
 
 ## Complete Query Example
 
-Here's the full query to run (substitute your marker):
+Here's the full query to run (substitute your marker and database path from `vibe-check status`):
 
 ```bash
-sqlite3 "file:$HOME/.vibe-check/vibe_check.db?mode=ro" \
-  "SELECT event_session_id, file_name, inserted_at FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_abc123%' ORDER BY inserted_at DESC LIMIT 1;"
-```
-
-Or if using the alternate location:
-
-```bash
-sqlite3 "file:$HOME/Developer/vibe-check/data/vibe_check.db?mode=ro" \
+sqlite3 "file:/opt/homebrew/var/vibe-check/vibe_check.db?mode=ro" \
   "SELECT event_session_id, file_name, inserted_at FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_abc123%' ORDER BY inserted_at DESC LIMIT 1;"
 ```
 
