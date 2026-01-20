@@ -1123,16 +1123,36 @@ def is_running() -> Optional[int]:
             pass
 
     # Fallback: check if any vibe-check.py process is running (for brew services mode)
+    # Exclude: current process, parent process, and any process running start/stop/status/etc commands
     try:
+        current_pid = os.getpid()
+        parent_pid = os.getppid()
+
+        # Use ps to get both PID and full command line
         result = subprocess.run(
-            ["pgrep", "-f", "vibe-check.py"],
+            ["ps", "ax", "-o", "pid,args"],
             capture_output=True,
             text=True,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            # Get first PID from output
-            pids = result.stdout.strip().split("\n")
-            return int(pids[0])
+        if result.returncode == 0:
+            for line in result.stdout.strip().split("\n"):
+                if "vibe-check.py" not in line:
+                    continue
+                parts = line.strip().split(None, 1)
+                if len(parts) < 2:
+                    continue
+                try:
+                    pid = int(parts[0])
+                    cmdline = parts[1]
+                except ValueError:
+                    continue
+                # Skip our own process and parent
+                if pid in (current_pid, parent_pid):
+                    continue
+                # Skip if it's running a subcommand (start, stop, status, etc.)
+                if any(cmd in cmdline for cmd in [" start", " stop", " status", " restart", " logs", " auth"]):
+                    continue
+                return pid
     except Exception:
         pass
 
