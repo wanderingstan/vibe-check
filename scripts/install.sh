@@ -288,25 +288,18 @@ if [ -d "$INSTALL_DIR" ]; then
             echo -e "${GREEN}║   Update Complete!                    ║${NC}"
             echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
             echo ""
-            if [ "$RUNNING_FROM_REPO" = true ]; then
-                echo -e "${BLUE}To start monitoring:${NC}"
-                echo -e "  $INSTALL_DIR/vibe-check start"
-            else
-                echo -e "${BLUE}To start monitoring:${NC}"
-                echo -e "  vibe-check start"
-            fi
-            echo ""
 
-            # Ask if user wants to start now
-            read -p "Do you want to start monitoring now? (Y/n): " -n 1 -r </dev/tty
-            echo
-            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-                echo -e "${GREEN}Starting monitor...${NC}"
-                rm -f "$INSTALL_LOG"
-                exec "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/vibe-check.py" start </dev/tty
-            else
-                rm -f "$INSTALL_LOG"
-            fi
+            # Restart the service to pick up updates
+            echo -e "${BLUE}Restarting service...${NC}"
+            "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/vibe-check.py" restart 2>/dev/null || \
+                "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/vibe-check.py" start 2>/dev/null || true
+
+            # Show current status
+            echo ""
+            echo -e "${BLUE}Current status:${NC}"
+            "$INSTALL_DIR/venv/bin/python" "$INSTALL_DIR/vibe-check.py" status
+            echo ""
+            rm -f "$INSTALL_LOG"
             exit 0
         fi
     fi
@@ -501,7 +494,8 @@ SERVICE
 
         systemctl --user daemon-reload
         systemctl --user enable vibe-check 2>/dev/null || true
-        echo -e "${GREEN}✓ Systemd service installed (starts on login)${NC}"
+        systemctl --user start vibe-check 2>/dev/null || true
+        echo -e "${GREEN}✓ Systemd service installed and started${NC}"
     fi
 fi
 
@@ -542,29 +536,24 @@ echo -e "${GREEN}║   Installation Complete!              ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
 echo ""
 
+# Show current status
+echo -e "${BLUE}Current status:${NC}"
+"$VIBE_CHECK_BIN" status
+echo ""
+
 if [ "$RUNNING_FROM_REPO" = true ]; then
     echo -e "${BLUE}Commands (from repo):${NC}"
-    echo -e "  $INSTALL_DIR/vibe-check start      # Start monitoring"
     echo -e "  $INSTALL_DIR/vibe-check stop       # Stop monitoring"
     echo -e "  $INSTALL_DIR/vibe-check status     # Check status"
+    echo -e "  $INSTALL_DIR/vibe-check logs       # View logs"
     echo -e "  $INSTALL_DIR/vibe-check auth login # Re-authenticate"
 else
     echo -e "${BLUE}Commands:${NC}"
-    echo -e "  vibe-check start     # Start monitoring in background"
     echo -e "  vibe-check stop      # Stop monitoring"
     echo -e "  vibe-check status    # Check status"
+    echo -e "  vibe-check logs      # View logs"
     echo -e "  vibe-check auth login # Re-authenticate"
 fi
 echo ""
 
-# Ask if user wants to start now
-read -p "Do you want to start monitoring now? (Y/n): " -n 1 -r </dev/tty
-echo
-if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    echo -e "${GREEN}Starting monitor...${NC}"
-    echo ""
-    rm -f "$INSTALL_LOG"
-    exec "$VIBE_CHECK_BIN" start </dev/tty
-else
-    rm -f "$INSTALL_LOG"
-fi
+rm -f "$INSTALL_LOG"
