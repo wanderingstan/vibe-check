@@ -1587,10 +1587,6 @@ def cmd_status(args):
         except sqlite3.Error as e:
             print(f"   Error reading database: {e}")
 
-    # Exit with error if not running
-    if not pid:
-        sys.exit(1)
-
 
 def cmd_logs(args):
     """View vibe-check process logs."""

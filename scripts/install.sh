@@ -56,15 +56,8 @@ $(cat "$INSTALL_LOG")
 \`\`\`
 "
 
-        # If we have the README, include it in the context
-        if [ -n "$readme_path" ]; then
-            claude -m "$prompt" -f "$readme_path"
-        else
-            # Fetch README from GitHub and include it
-            claude -m "$prompt
-
-Note: Could not find local README.md. You may want to fetch it from: https://raw.githubusercontent.com/wanderingstan/vibe-check/main/README.md"
-        fi
+        # Pass the prompt to Claude (pipe to avoid shell escaping issues)
+        echo "$prompt" | claude
     else
         echo ""
         echo -e "${YELLOW}Tip: Install Claude Code CLI to get automatic error diagnosis:${NC}"
