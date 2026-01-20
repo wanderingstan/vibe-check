@@ -217,7 +217,7 @@ if [ ! -d "$HOME/.claude/projects" ]; then
     echo -e "${YELLOW}must be installed and used at least once before installing.${NC}"
     echo ""
     echo -e "${BLUE}To install Claude Code:${NC}"
-    echo -e "  https://claude.ai/download"
+    echo -e "  https://code.claude.com/docs/en/quickstart"
     echo ""
     echo -e "${BLUE}After installing, run Claude Code at least once, then re-run this installer.${NC}"
     exit 1
@@ -251,9 +251,10 @@ if [ -d "$INSTALL_DIR" ]; then
         exit 1
     fi
 
-    # Check if venv exists, create if missing
-    if [ ! -d "venv" ]; then
-        echo -e "${YELLOW}⚠ Virtual environment missing, creating...${NC}"
+    # Check if venv exists and is valid
+    if [ ! -f "venv/bin/activate" ]; then
+        echo -e "${YELLOW}⚠ Virtual environment missing or invalid, recreating...${NC}"
+        rm -rf venv  # Clean up any partial/corrupted venv
         if ! python3 -m venv venv; then
             echo -e "${RED}✗ Failed to create virtual environment${NC}"
             show_venv_hint
