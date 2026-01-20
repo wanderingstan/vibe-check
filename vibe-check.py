@@ -295,8 +295,17 @@ class SQLiteManager:
                 inserted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 event_type TEXT GENERATED ALWAYS AS
                     (json_extract(event_data, '$.type')) STORED,
-                event_message TEXT GENERATED ALWAYS AS
-                    (json_extract(event_data, '$.message.content[0].text')) STORED,
+                event_message TEXT GENERATED ALWAYS AS (
+                    json_extract(event_data, '$.message.content[0].text') ||
+                    IIF(json_extract(event_data, '$.message.content[1].text') IS NOT NULL,
+                        char(10) || char(10) || json_extract(event_data, '$.message.content[1].text'), '') ||
+                    IIF(json_extract(event_data, '$.message.content[2].text') IS NOT NULL,
+                        char(10) || char(10) || json_extract(event_data, '$.message.content[2].text'), '') ||
+                    IIF(json_extract(event_data, '$.message.content[3].text') IS NOT NULL,
+                        char(10) || char(10) || json_extract(event_data, '$.message.content[3].text'), '') ||
+                    IIF(json_extract(event_data, '$.message.content[4].text') IS NOT NULL,
+                        char(10) || char(10) || json_extract(event_data, '$.message.content[4].text'), '')
+                ) STORED,
                 event_git_branch TEXT GENERATED ALWAYS AS
                     (json_extract(event_data, '$.gitBranch')) STORED,
                 event_session_id TEXT GENERATED ALWAYS AS
