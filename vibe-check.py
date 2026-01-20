@@ -14,6 +14,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 import webbrowser
 from pathlib import Path
@@ -269,6 +270,7 @@ class SQLiteManager:
 
             self.connect()
             self.create_schema()
+            self._migrate_schema()
             logger.info(f"Connected to SQLite database: {self.db_path}")
         except Exception as e:
             logger.error(f"Error initializing SQLite: {e}")
@@ -408,6 +410,30 @@ class SQLiteManager:
 
         self.connection.commit()
 
+    def _migrate_schema(self):
+        """Run schema migrations for existing databases."""
+        # Check if synced_at column exists
+        self.cursor.execute("PRAGMA table_info(conversation_events)")
+        columns = [row[1] for row in self.cursor.fetchall()]
+
+        if "synced_at" not in columns:
+            logger.info("Migrating schema: adding synced_at column...")
+            self.cursor.execute(
+                """
+                ALTER TABLE conversation_events
+                ADD COLUMN synced_at DATETIME DEFAULT NULL
+            """
+            )
+            # Add index for efficient queries on unsynced events
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_synced_at
+                ON conversation_events(synced_at)
+            """
+            )
+            self.connection.commit()
+            logger.info("Schema migration complete: synced_at column added")
+
     def insert_event(
         self,
         filename: str,
@@ -415,10 +441,14 @@ class SQLiteManager:
         event_data: dict,
         git_remote_url: Optional[str] = None,
         git_commit_hash: Optional[str] = None,
-    ) -> bool:
-        """Insert an event into the SQLite database."""
+    ) -> Optional[int]:
+        """Insert an event into the SQLite database.
+
+        Returns:
+            The row ID of the inserted event, or None on failure.
+        """
         if not self.enabled:
-            return False
+            return None
 
         try:
             # Convert event_data to JSON string
@@ -443,11 +473,111 @@ class SQLiteManager:
             )
             self.connection.commit()
 
-            return True
+            # Return the row ID (lastrowid is 0 if INSERT OR IGNORE skipped)
+            if self.cursor.lastrowid:
+                return self.cursor.lastrowid
+
+            # If ignored (duplicate), find the existing row ID
+            self.cursor.execute(
+                "SELECT id FROM conversation_events WHERE file_name = ? AND line_number = ?",
+                (filename, line_number),
+            )
+            row = self.cursor.fetchone()
+            return row[0] if row else None
 
         except sqlite3.Error as e:
             logger.error(f"SQLite error: {e}")
+            return None
+
+    def mark_event_synced(self, event_id: int) -> bool:
+        """Mark an event as synced to the remote API.
+
+        Args:
+            event_id: The row ID of the event to mark as synced.
+
+        Returns:
+            True if successful, False otherwise.
+        """
+        if not self.enabled:
             return False
+
+        try:
+            self.cursor.execute(
+                "UPDATE conversation_events SET synced_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (event_id,),
+            )
+            self.connection.commit()
+            return self.cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error marking event synced: {e}")
+            return False
+
+    def get_unsynced_events(self, limit: int = 50) -> list:
+        """Get events that haven't been synced to the remote API.
+
+        Args:
+            limit: Maximum number of events to return.
+
+        Returns:
+            List of event dictionaries with id, file_name, line_number, event_data,
+            git_remote_url, git_commit_hash.
+        """
+        if not self.enabled:
+            return []
+
+        try:
+            self.cursor.execute(
+                """
+                SELECT id, file_name, line_number, event_data, git_remote_url, git_commit_hash
+                FROM conversation_events
+                WHERE synced_at IS NULL
+                ORDER BY id DESC
+                LIMIT ?
+            """,
+                (limit,),
+            )
+            rows = self.cursor.fetchall()
+            return [
+                {
+                    "id": row[0],
+                    "file_name": row[1],
+                    "line_number": row[2],
+                    "event_data": json.loads(row[3]),
+                    "git_remote_url": row[4],
+                    "git_commit_hash": row[5],
+                }
+                for row in rows
+            ]
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error getting unsynced events: {e}")
+            return []
+
+    def get_sync_stats(self) -> dict:
+        """Get sync statistics.
+
+        Returns:
+            Dictionary with total_events, synced_events, pending_events.
+        """
+        if not self.enabled:
+            return {"total_events": 0, "synced_events": 0, "pending_events": 0}
+
+        try:
+            self.cursor.execute("SELECT COUNT(*) FROM conversation_events")
+            total = self.cursor.fetchone()[0]
+
+            self.cursor.execute(
+                "SELECT COUNT(*) FROM conversation_events WHERE synced_at IS NOT NULL"
+            )
+            synced = self.cursor.fetchone()[0]
+
+            return {
+                "total_events": total,
+                "synced_events": synced,
+                "pending_events": total - synced,
+            }
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error getting sync stats: {e}")
+            return {"total_events": 0, "synced_events": 0, "pending_events": 0}
 
     def close(self):
         """Close SQLite connection."""
@@ -497,6 +627,11 @@ class ConversationMonitor(FileSystemEventHandler):
             self.test_connection()
         else:
             logger.info("Remote API recording is disabled")
+
+        # Background sync worker state
+        self.sync_thread: Optional[threading.Thread] = None
+        self.sync_running = False
+        self.sync_backoff_delay = 0.1  # Start at 100ms between requests
 
         # Log configuration summary
         destinations = []
@@ -568,10 +703,8 @@ class ConversationMonitor(FileSystemEventHandler):
 
             logger.info(f"Processing {len(new_lines)} new line(s) from {filename}")
 
-            # Track success counts
-            api_success_count = 0
-            sqlite_success_count = 0
-            processed_count = 0
+            # Track counts
+            stored_count = 0
             skipped_count = 0
 
             for idx, line in enumerate(new_lines):
@@ -586,13 +719,9 @@ class ConversationMonitor(FileSystemEventHandler):
                     # Parse JSON
                     event_data = json.loads(line)
 
-                    # Insert into database
-                    api_success, sqlite_success = self.insert_event(filename, line_number, event_data)
-                    processed_count += 1
-                    if api_success:
-                        api_success_count += 1
-                    if sqlite_success:
-                        sqlite_success_count += 1
+                    # Store in local database (API sync handled by background worker)
+                    if self.insert_event(filename, line_number, event_data):
+                        stored_count += 1
 
                     # Update state
                     self.state_manager.set_last_line(filename, line_number)
@@ -602,24 +731,11 @@ class ConversationMonitor(FileSystemEventHandler):
                     # Still update state to skip this line
                     self.state_manager.set_last_line(filename, line_number)
                     skipped_count += 1
-                except requests.RequestException as e:
-                    logger.error(f"API error at {filename}:{line_number}: {e}")
-                    # Don't update state so we retry later
-                    break
 
-            # Log summary of what was written
-            if processed_count > 0:
-                destinations = []
-                if self.api_enabled:
-                    destinations.append(f"remote:{api_success_count}/{processed_count}")
-                if self.sqlite_manager and self.sqlite_manager.enabled:
-                    destinations.append(f"local:{sqlite_success_count}/{processed_count}")
-                logger.info(f"Write summary for {filename}: {', '.join(destinations)}")
-
-                # Warn if remote is enabled but failing
-                if self.api_enabled and api_success_count == 0 and processed_count > 0:
-                    logger.warning(f"Remote API enabled but 0/{processed_count} events written to server!")
-                    logger.warning(f"Check API connection: {self.api_endpoint}")
+            # Log summary
+            if stored_count > 0:
+                sync_note = " (API sync pending)" if self.api_enabled else ""
+                logger.info(f"Stored {stored_count} event(s) from {filename}{sync_note}")
 
         except Exception as e:
             logger.error(f"Error processing {file_path}: {e}")
@@ -675,14 +791,18 @@ class ConversationMonitor(FileSystemEventHandler):
 
         return event_data
 
-    def insert_event(self, filename: str, line_number: int, event_data: dict) -> Tuple[bool, bool]:
-        """Insert an event via API and SQLite (if enabled).
+    def insert_event(self, filename: str, line_number: int, event_data: dict) -> bool:
+        """Insert an event to local SQLite database.
+
+        API sync is handled separately by the background sync worker.
+        This keeps file monitoring fast and decoupled from network latency.
 
         Returns:
-            Tuple of (api_success, sqlite_success) booleans
+            True if SQLite insert succeeded, False otherwise.
         """
-        api_success = False
-        sqlite_success = False
+        if not self.sqlite_manager or not self.sqlite_manager.enabled:
+            logger.warning("SQLite not enabled - event not stored")
+            return False
 
         # Get git info from working directory if available
         git_remote_url = None
@@ -691,63 +811,27 @@ class ConversationMonitor(FileSystemEventHandler):
         if working_dir:
             git_remote_url, git_commit_hash = get_git_info(Path(working_dir))
 
-        # Try API if enabled (with redaction for remote storage)
-        if self.api_enabled:
-            try:
-                # Create redacted version for remote API
-                redacted_event_data = self.redact_secrets_from_event(event_data)
+        # Insert to SQLite (synced_at = NULL, background worker will sync to API)
+        event_id = self.sqlite_manager.insert_event(
+            filename, line_number, event_data, git_remote_url, git_commit_hash
+        )
 
-                response = self.session.post(
-                    f"{self.api_endpoint}/events",
-                    json={
-                        "file_name": filename,
-                        "line_number": line_number,
-                        "event_data": redacted_event_data,
-                        "git_remote_url": git_remote_url,
-                        "git_commit_hash": git_commit_hash,
-                    },
-                )
-                response.raise_for_status()
-                api_success = True
-            except requests.RequestException as e:
-                logger.error(f"API error {filename}:{line_number}: {e}")
-
-        # Try SQLite if enabled (with original unredacted data for local storage)
-        if self.sqlite_manager and self.sqlite_manager.enabled:
-            sqlite_success = self.sqlite_manager.insert_event(
-                filename, line_number, event_data, git_remote_url, git_commit_hash
-            )
-
-        # Report success
-        if api_success or sqlite_success:
-            status = []
-            if api_success:
-                status.append("API")
-            if sqlite_success:
-                status.append("SQLite")
+        if event_id:
+            # Build log message
             git_info = []
             if git_remote_url:
-                # Extract repo name from URL
                 repo_name = git_remote_url.split("/")[-1].replace(".git", "")
                 git_info.append(f"repo:{repo_name}")
             if git_commit_hash:
                 git_info.append(f"commit:{git_commit_hash[:7]}")
-            status_msg = f"Inserted: {filename}:{line_number} → {', '.join(status)}"
+
+            status_msg = f"Stored: {filename}:{line_number}"
             if git_info:
                 status_msg += f" [{', '.join(git_info)}]"
             logger.info(status_msg)
+            return True
 
-        # Only raise error if both failed (or if neither is enabled)
-        if not api_success and not sqlite_success:
-            if not self.api_enabled and not (
-                self.sqlite_manager and self.sqlite_manager.enabled
-            ):
-                raise requests.RequestException(
-                    "Both API and SQLite are disabled - at least one must be enabled"
-                )
-            raise requests.RequestException("Both API and SQLite insertion failed")
-
-        return api_success, sqlite_success
+        return False
 
     def on_modified(self, event):
         """Handle file modification events."""
@@ -768,6 +852,100 @@ class ConversationMonitor(FileSystemEventHandler):
         if file_path.suffix == ".jsonl":
             logger.info(f"Detected new file: {file_path.name}")
             self.process_file(file_path)
+
+    # ===== Background Sync Worker =====
+
+    def start_sync_worker(self):
+        """Start the background sync worker thread."""
+        if self.sync_thread and self.sync_thread.is_alive():
+            logger.debug("Sync worker already running")
+            return
+
+        self.sync_running = True
+        self.sync_thread = threading.Thread(target=self._sync_loop, daemon=True)
+        self.sync_thread.start()
+        logger.info("Background sync worker started")
+
+    def stop_sync_worker(self):
+        """Stop the background sync worker thread."""
+        self.sync_running = False
+        if self.sync_thread:
+            self.sync_thread.join(timeout=5)
+            logger.info("Background sync worker stopped")
+
+    def _sync_loop(self):
+        """Background loop that syncs pending events to the remote API."""
+        while self.sync_running:
+            try:
+                if self.api_enabled and self.sqlite_manager and self.sqlite_manager.enabled:
+                    synced = self._sync_batch(batch_size=50)
+                    if synced == 0:
+                        # No pending events, sleep longer
+                        time.sleep(60)
+                    else:
+                        # More to sync, short delay between batches
+                        logger.info(f"Background sync: synced {synced} events")
+                        time.sleep(2)
+                else:
+                    # API not enabled or SQLite not available, check periodically
+                    time.sleep(60)
+            except Exception as e:
+                logger.error(f"Error in sync worker: {e}")
+                # Back off on errors
+                time.sleep(min(self.sync_backoff_delay * 2, 300))
+
+    def _sync_batch(self, batch_size: int = 50) -> int:
+        """Sync a batch of unsynced events to the remote API.
+
+        Args:
+            batch_size: Maximum number of events to sync in this batch.
+
+        Returns:
+            Number of events successfully synced.
+        """
+        if not self.sqlite_manager:
+            return 0
+
+        unsynced = self.sqlite_manager.get_unsynced_events(limit=batch_size)
+        if not unsynced:
+            return 0
+
+        synced_count = 0
+        for event in unsynced:
+            try:
+                # Create redacted version for remote API
+                redacted_event_data = self.redact_secrets_from_event(event["event_data"])
+
+                response = self.session.post(
+                    f"{self.api_endpoint}/events",
+                    json={
+                        "file_name": event["file_name"],
+                        "line_number": event["line_number"],
+                        "event_data": redacted_event_data,
+                        "git_remote_url": event["git_remote_url"],
+                        "git_commit_hash": event["git_commit_hash"],
+                    },
+                )
+                response.raise_for_status()
+
+                # Mark as synced
+                self.sqlite_manager.mark_event_synced(event["id"])
+                synced_count += 1
+
+                # Reset backoff on success
+                self.sync_backoff_delay = 0.1
+
+                # Throttle: 100ms between requests = 10 req/sec max
+                time.sleep(0.1)
+
+            except requests.RequestException as e:
+                # On failure, stop batch and wait for next cycle
+                logger.warning(f"Sync failed for event {event['id']}: {e}")
+                # Exponential backoff, max 5 minutes
+                self.sync_backoff_delay = min(self.sync_backoff_delay * 2, 300)
+                break
+
+        return synced_count
 
     def process_existing_files(self, directory: Path):
         """Process all existing JSONL files on startup."""
@@ -1300,6 +1478,82 @@ def cmd_status(args):
         print("   ❌ Not configured")
         print("   To enable: vibe-check auth login")
 
+    # Sync statistics (if database exists)
+    if db_path and db_path.exists():
+        print("\n📊 Sync statistics:")
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            # Check if synced_at column exists
+            cursor.execute("PRAGMA table_info(conversation_events)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if "synced_at" in columns:
+                cursor.execute("SELECT COUNT(*) FROM conversation_events")
+                total = cursor.fetchone()[0]
+
+                cursor.execute(
+                    "SELECT COUNT(*) FROM conversation_events WHERE synced_at IS NOT NULL"
+                )
+                synced = cursor.fetchone()[0]
+
+                pending = total - synced
+                pct = (synced / total * 100) if total > 0 else 0
+
+                print(f"   Total events:  {total:,}")
+                print(f"   Synced:        {synced:,} ({pct:.1f}%)")
+                print(f"   Pending:       {pending:,}")
+
+                if pending > 0:
+                    # Estimate time to sync at 10 req/sec
+                    eta_seconds = pending / 10
+                    if eta_seconds < 60:
+                        eta_str = f"{eta_seconds:.0f} sec"
+                    elif eta_seconds < 3600:
+                        eta_str = f"{eta_seconds / 60:.0f} min"
+                    else:
+                        eta_str = f"{eta_seconds / 3600:.1f} hr"
+                    print(f"   ETA to sync:   ~{eta_str} (at 10/sec)")
+
+                # Check if sync worker is actively syncing (recent synced_at timestamps)
+                cursor.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM conversation_events
+                    WHERE synced_at > datetime('now', '-2 minutes')
+                """
+                )
+                recent_count = cursor.fetchone()[0]
+
+                if recent_count > 0 and pending > 0:
+                    print(f"   Sync worker:   🟢 Active ({recent_count} synced in last 2 min)")
+                elif pending > 0 and pid:
+                    print(f"   Sync worker:   🟡 Idle (waiting or backed off)")
+                elif pending == 0:
+                    print(f"   Sync worker:   ✅ Complete (all synced)")
+                else:
+                    print(f"   Sync worker:   ⚪ Not running (daemon stopped)")
+
+                # Show last sync time if any synced
+                if synced > 0:
+                    cursor.execute(
+                        "SELECT MAX(synced_at) FROM conversation_events WHERE synced_at IS NOT NULL"
+                    )
+                    last_sync_time = cursor.fetchone()[0]
+                    if last_sync_time:
+                        print(f"   Last synced:   {last_sync_time}")
+
+            else:
+                cursor.execute("SELECT COUNT(*) FROM conversation_events")
+                total = cursor.fetchone()[0]
+                print(f"   Total events:  {total:,}")
+                print("   (sync tracking not yet enabled - restart daemon to migrate)")
+
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"   Error reading database: {e}")
+
     # Exit with error if not running
     if not pid:
         sys.exit(1)
@@ -1565,6 +1819,9 @@ def run_monitor(args):
     if not args.skip_backlog:
         event_handler.process_existing_files(conversation_dir)
 
+    # Start background sync worker (syncs pending events to API)
+    event_handler.start_sync_worker()
+
     # Start watching for changes
     observer = Observer()
     observer.schedule(event_handler, str(conversation_dir), recursive=True)
@@ -1577,6 +1834,7 @@ def run_monitor(args):
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Stopping vibe-check process...")
+        event_handler.stop_sync_worker()
         observer.stop()
 
     observer.join()
