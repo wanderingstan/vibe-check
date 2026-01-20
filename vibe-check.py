@@ -1363,7 +1363,20 @@ def get_sqlite_db_path() -> Optional[Path]:
         try:
             with open(config_path, "r") as f:
                 config = json.load(f)
-            if "sqlite" in config and config["sqlite"].get("enabled", True):
+
+            # Handle configs missing sqlite section (created before sqlite support)
+            if "sqlite" not in config:
+                # Use default path - ~/.vibe-check/vibe_check.db
+                default_path = Path.home() / ".vibe-check" / "vibe_check.db"
+                if default_path.exists():
+                    return default_path
+                # Also check data dir (manual installs)
+                data_dir_path = get_data_dir() / "vibe_check.db"
+                if data_dir_path.exists():
+                    return data_dir_path
+                return None
+
+            if config["sqlite"].get("enabled", True):
                 return Path(config["sqlite"]["database_path"]).expanduser()
         except (json.JSONDecodeError, KeyError):
             pass
@@ -1610,6 +1623,13 @@ def cmd_auth_login(args):
         with open(config_path, "r") as f:
             config = json.load(f)
         api_url = config.get("api", {}).get("url", "") or DEFAULT_API_URL
+
+        # Ensure sqlite section exists (for configs created before sqlite support)
+        if "sqlite" not in config:
+            config["sqlite"] = {
+                "enabled": True,
+                "database_path": "~/.vibe-check/vibe_check.db"
+            }
 
     # Remove trailing /api if present for the auth endpoint base
     auth_base = api_url.rstrip("/")
