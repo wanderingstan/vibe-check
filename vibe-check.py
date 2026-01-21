@@ -1764,7 +1764,6 @@ def cmd_auth_login(args):
                             json.dump(config, f, indent=2)
 
                         print(f"   API key saved to {config_path}")
-                        print("\n🎉 You're all set! Run 'vibe-check start' to begin monitoring.")
                         return
 
                 elif poll_response.status_code == 202:
