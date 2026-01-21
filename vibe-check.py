@@ -1289,10 +1289,10 @@ def cmd_start(args):
     if needs_auth_prompt:
         print("\n☁️  Remote sync is not configured.")
         print("   This allows viewing your stats at vibecheck.wanderingstan.com")
-        print("\nWould you like to authenticate now? (y/n): ", end="", flush=True)
+        print("\nWould you like to authenticate now? (Y/n): ", end="", flush=True)
         try:
             response = input().strip().lower()
-            if response in ["y", "yes"]:
+            if response in ["", "y", "yes"]:  # Default to yes (empty = Enter)
                 cmd_auth_login(args)
                 print()  # blank line after auth
         except (EOFError, KeyboardInterrupt):
