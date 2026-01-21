@@ -89,84 +89,14 @@ class VibeCheck < Formula
   end
 
   def post_install
-    # Check if Claude Code is installed
-    claude_projects = "#{Dir.home}/.claude/projects"
-    unless Dir.exist?(claude_projects)
-      opoo "Claude Code does not appear to be installed!"
-      opoo "Vibe Check monitors Claude Code conversations, so it won't work without Claude Code."
-      opoo "Install Claude Code from: https://code.claude.com/docs/en/overview"
-      opoo "Then run Claude Code at least once before starting vibe-check."
-    end
-
-    # Unified data directory: always ~/.vibe-check
-    # Symlink from Homebrew var for compatibility
-    data_dir = "#{Dir.home}/.vibe-check"
-    FileUtils.mkdir_p(data_dir)
-
-    # Create symlink from var/vibe-check -> ~/.vibe-check
-    var_dir = var/"vibe-check"
-    if var_dir.directory? && !var_dir.symlink?
-      # Migrate existing data from old Homebrew location
-      ohai "Migrating data from #{var_dir} to #{data_dir}..."
-      Dir.glob("#{var_dir}/*", File::FNM_DOTMATCH).each do |f|
-        next if File.basename(f) == "." || File.basename(f) == ".."
-        dest = "#{data_dir}/#{File.basename(f)}"
-        unless File.exist?(dest)
-          FileUtils.mv(f, dest)
-        end
-      end
-      FileUtils.rm_rf(var_dir)
-      FileUtils.ln_sf(data_dir, var_dir)
-      ohai "Migration complete!"
-    elsif !var_dir.exist?
-      FileUtils.ln_sf(data_dir, var_dir)
-    end
-
-    # Create default config if doesn't exist
-    config_file = Pathname.new("#{data_dir}/config.json")
-    unless config_file.exist?
-      config_file.write <<~JSON
-        {
-          "api": {
-            "enabled": false,
-            "url": "",
-            "api_key": ""
-          },
-          "sqlite": {
-            "enabled": true,
-            "database_path": "~/.vibe-check/vibe_check.db",
-            "user_name": "#{ENV["USER"]}"
-          },
-          "monitor": {
-            "conversation_dir": "#{Dir.home}/.claude/projects"
-          }
-        }
-      JSON
-    end
-
-    # Auto-install Claude Code skills
-    skills_dest = "#{Dir.home}/.claude/skills"
-    FileUtils.mkdir_p(skills_dest)
-
-    Dir["#{share}/vibe-check/skills/*.md"].each do |skill|
-      dest = "#{skills_dest}/#{File.basename(skill)}"
-      # Backup if exists
-      if File.exist?(dest)
-        backup = "#{skills_dest}/.backup-#{Time.now.to_i}-#{File.basename(skill)}"
-        FileUtils.cp(dest, backup)
-      end
-      FileUtils.cp(skill, dest)
-    end
-
-    ohai "Installed Claude Code skills to ~/.claude/skills/"
-
-    # Remind user to start the service
-    opoo "Run 'vibe-check start' to enable monitoring with auto-start on boot!"
+    # Note: Homebrew's sandbox prevents access to home directory
+    # All setup (config, skills) is handled by vibe-check on first run
+    ohai "Run 'vibe-check start' to enable monitoring with auto-start on boot!"
   end
 
   service do
-    run [opt_bin/"vibe-check", "--run", "--skip-skills-check"]
-    working_dir var/"vibe-check"
+    run [opt_bin/"vibe-check", "--run"]
+    working_dir HOMEBREW_PREFIX/"var"
     keep_alive true
     log_path var/"log/vibe-check.log"
     error_log_path var/"log/vibe-check.error.log"

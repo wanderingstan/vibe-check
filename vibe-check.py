@@ -976,6 +976,24 @@ def check_claude_skills():
     if not missing_skills:
         return
 
+    # First, try Homebrew location (auto-install silently)
+    homebrew_skills_dir = Path("/opt/homebrew/share/vibe-check/skills")
+    if homebrew_skills_dir.exists():
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        installed_count = 0
+        for skill_file in homebrew_skills_dir.glob("*.md"):
+            dest = skills_dir / skill_file.name
+            if not dest.exists():
+                try:
+                    import shutil
+                    shutil.copy(skill_file, dest)
+                    installed_count += 1
+                except Exception as e:
+                    logger.warning(f"Could not install skill {skill_file.name}: {e}")
+        if installed_count > 0:
+            logger.info(f"Installed {installed_count} Claude Code skills to {skills_dir}")
+        return
+
     # Check if we're in the vibe-check directory with the installer
     script_dir = Path(__file__).parent
     installer_path = script_dir / "claude-skills" / "install-skills.sh"
@@ -1805,13 +1823,23 @@ def run_monitor(args):
     config_path = get_config_path()
 
     if not config_path.exists():
-        logger.error(f"Configuration file not found: {config_path}")
-        logger.error("Please create config.json in the data directory")
-        logger.error(f"Expected location: {config_path}")
-        sys.exit(1)
-
-    with open(config_path, "r") as f:
-        config = json.load(f)
+        # Create default config on first run
+        logger.info(f"Creating default configuration at: {config_path}")
+        default_config = {
+            "api": {"enabled": False, "url": "", "api_key": ""},
+            "sqlite": {
+                "enabled": True,
+                "database_path": "~/.vibe-check/vibe_check.db",
+                "user_name": os.environ.get("USER", "unknown")
+            },
+            "monitor": {"conversation_dir": "~/.claude/projects"}
+        }
+        with open(config_path, "w") as f:
+            json.dump(default_config, f, indent=2)
+        config = default_config
+    else:
+        with open(config_path, "r") as f:
+            config = json.load(f)
 
     # Expand paths
     conversation_dir = Path(config["monitor"]["conversation_dir"]).expanduser()
