@@ -78,13 +78,19 @@ git pull
 
 ## Uninstalling
 
-To uninstall Vibe Check:
-
+**Homebrew:**
 ```bash
-~/.vibe-check/uninstall.sh
+brew services stop vibe-check
+brew uninstall vibe-check
+rm -rf ~/.vibe-check
 ```
 
-This will remove the installation directory and stop any running monitor processes. Your server account will remain active.
+**Manual install:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/wanderingstan/vibe-check/main/scripts/uninstall.sh | bash
+```
+
+This removes the installation and stops any running processes. Your server account remains active.
 
 ## Architecture
 
