@@ -1507,17 +1507,18 @@ def cmd_status(args):
     # Show file locations
     print("\n📁 File locations:")
 
-    # Config file
+    # Config file (resolve symlinks to show true location)
     config_path = get_config_path()
     if config_path.exists():
-        print(f"   Config:   {config_path}")
+        print(f"   Config:   {config_path.resolve()}")
     else:
         print(f"   Config:   {config_path} (not found)")
 
-    # SQLite database
+    # SQLite database (resolve symlinks to show true location)
     db_path = get_sqlite_db_path()
     if db_path:
         if db_path.exists():
+            resolved_path = db_path.resolve()
             # Show file size
             size_bytes = db_path.stat().st_size
             if size_bytes < 1024:
@@ -1526,17 +1527,18 @@ def cmd_status(args):
                 size_str = f"{size_bytes / 1024:.1f} KB"
             else:
                 size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-            print(f"   Database: {db_path} ({size_str})")
+            print(f"   Database: {resolved_path} ({size_str})")
         else:
             print(f"   Database: {db_path} (not created yet)")
     else:
         print("   Database: (SQLite disabled or not configured)")
 
-    # Log file(s) - show based on how service is running
+    # Log file(s) - show based on how service is running (resolve symlinks)
     log_paths = get_active_log_paths()
     for i, (log_path, description) in enumerate(log_paths):
         prefix = "Log:" if i == 0 else "    "
         if log_path.exists():
+            resolved_log = log_path.resolve()
             size_bytes = log_path.stat().st_size
             if size_bytes < 1024:
                 size_str = f"{size_bytes} B"
@@ -1544,14 +1546,14 @@ def cmd_status(args):
                 size_str = f"{size_bytes / 1024:.1f} KB"
             else:
                 size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-            print(f"   {prefix:8} {log_path} ({size_str})")
+            print(f"   {prefix:8} {resolved_log} ({size_str})")
         else:
             print(f"   {prefix:8} {log_path} ({description})")
 
-    # PID file
+    # PID file (resolve symlinks)
     pid_path = get_pid_file()
     if pid_path.exists():
-        print(f"   PID:      {pid_path}")
+        print(f"   PID:      {pid_path.resolve()}")
     else:
         print(f"   PID:      {pid_path} (not created)")
 
