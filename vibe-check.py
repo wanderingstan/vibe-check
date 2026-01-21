@@ -735,7 +735,9 @@ class ConversationMonitor(FileSystemEventHandler):
             # Log summary
             if stored_count > 0:
                 sync_note = " (API sync pending)" if self.api_enabled else ""
-                logger.info(f"Stored {stored_count} event(s) from {filename}{sync_note}")
+                logger.info(
+                    f"Stored {stored_count} event(s) from {filename}{sync_note}"
+                )
 
         except Exception as e:
             logger.error(f"Error processing {file_path}: {e}")
@@ -877,7 +879,11 @@ class ConversationMonitor(FileSystemEventHandler):
         """Background loop that syncs pending events to the remote API."""
         while self.sync_running:
             try:
-                if self.api_enabled and self.sqlite_manager and self.sqlite_manager.enabled:
+                if (
+                    self.api_enabled
+                    and self.sqlite_manager
+                    and self.sqlite_manager.enabled
+                ):
                     synced = self._sync_batch(batch_size=50)
                     if synced == 0:
                         # No pending events, sleep longer
@@ -914,7 +920,9 @@ class ConversationMonitor(FileSystemEventHandler):
         for event in unsynced:
             try:
                 # Create redacted version for remote API
-                redacted_event_data = self.redact_secrets_from_event(event["event_data"])
+                redacted_event_data = self.redact_secrets_from_event(
+                    event["event_data"]
+                )
 
                 response = self.session.post(
                     f"{self.api_endpoint}/events",
@@ -986,12 +994,15 @@ def check_claude_skills():
             if not dest.exists():
                 try:
                     import shutil
+
                     shutil.copy(skill_file, dest)
                     installed_count += 1
                 except Exception as e:
                     logger.warning(f"Could not install skill {skill_file.name}: {e}")
         if installed_count > 0:
-            logger.info(f"Installed {installed_count} Claude Code skills to {skills_dir}")
+            logger.info(
+                f"Installed {installed_count} Claude Code skills to {skills_dir}"
+            )
         return
 
     # Check if we're in the vibe-check directory with the installer
@@ -1109,7 +1120,12 @@ def get_active_log_paths() -> list[tuple[Path, str]]:
     # If nothing found, return expected paths
     if not logs:
         if is_brew_service_running():
-            logs.append((get_brew_log_dir() / "vibe-check.error.log", "brew service log (not created yet)"))
+            logs.append(
+                (
+                    get_brew_log_dir() / "vibe-check.error.log",
+                    "brew service log (not created yet)",
+                )
+            )
         else:
             logs.append((get_log_file(), "daemon log (not created yet)"))
 
@@ -1166,7 +1182,17 @@ def is_running() -> Optional[int]:
                 if pid in (current_pid, parent_pid):
                     continue
                 # Skip if it's running a subcommand (start, stop, status, etc.)
-                if any(cmd in cmdline for cmd in [" start", " stop", " status", " restart", " logs", " auth"]):
+                if any(
+                    cmd in cmdline
+                    for cmd in [
+                        " start",
+                        " stop",
+                        " status",
+                        " restart",
+                        " logs",
+                        " auth",
+                    ]
+                ):
                     continue
                 return pid
     except Exception:
@@ -1299,7 +1325,7 @@ def cmd_start(args):
             print("\nSkipping authentication. Run 'vibe-check auth login' later.")
 
     # If homebrew install and not forcing foreground, use brew services
-    if is_homebrew_service() and not getattr(args, 'foreground', False):
+    if is_homebrew_service() and not getattr(args, "foreground", False):
         print("🧜 Starting via Homebrew service...")
         result = subprocess.run(["brew", "services", "start", "vibe-check"])
         if result.returncode == 0:
@@ -1317,7 +1343,7 @@ def cmd_start(args):
         remove_pid_file()
         sys.exit(0)
 
-    if getattr(args, 'foreground', False):
+    if getattr(args, "foreground", False):
         # Foreground mode for systemd/launchd
         print("🧜 Starting monitor in foreground...")
 
@@ -1325,7 +1351,7 @@ def cmd_start(args):
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s - %(levelname)s - %(message)s",
-            handlers=[logging.StreamHandler(sys.stdout)]
+            handlers=[logging.StreamHandler(sys.stdout)],
         )
 
         write_pid_file()
@@ -1558,6 +1584,36 @@ def cmd_status(args):
         print("   ❌ Not configured")
         print("   To enable: vibe-check auth login")
 
+    # Claude Skills status
+    print("\n📚 Claude Skills:")
+    skills_dir = Path.home() / ".claude" / "skills"
+    skills_to_check = [
+        "claude-stats.md",
+        "search-conversations.md",
+        "analyze-tools.md",
+        "recent-work.md",
+        "view-stats.md",
+        "get-session-id.md",
+    ]
+
+    if skills_dir.exists():
+        installed = [s for s in skills_to_check if (skills_dir / s).exists()]
+        missing = [s for s in skills_to_check if not (skills_dir / s).exists()]
+
+        if len(installed) == len(skills_to_check):
+            print(f"   ✅ All {len(skills_to_check)} skills installed")
+            print(f"   Location: {skills_dir}")
+        elif installed:
+            print(f"   ⚠️  {len(installed)}/{len(skills_to_check)} skills installed")
+            print(f"   Location: {skills_dir}")
+            print(f"   Missing: {', '.join(missing)}")
+        else:
+            print("   ❌ No skills installed")
+            print("   To install: run 'vibe-check start' and follow prompts")
+    else:
+        print("   ❌ Skills directory not found")
+        print("   To install: run 'vibe-check start' and follow prompts")
+
     # Sync statistics (if database exists)
     if db_path and db_path.exists():
         print("\n📊 Sync statistics:")
@@ -1607,7 +1663,9 @@ def cmd_status(args):
                 recent_count = cursor.fetchone()[0]
 
                 if recent_count > 0 and pending > 0:
-                    print(f"   Sync worker:   🟢 Active ({recent_count} synced in last 2 min)")
+                    print(
+                        f"   Sync worker:   🟢 Active ({recent_count} synced in last 2 min)"
+                    )
                 elif pending > 0 and pid:
                     print(f"   Sync worker:   🟡 Idle (waiting or backed off)")
                 elif pending == 0:
@@ -1633,6 +1691,98 @@ def cmd_status(args):
             conn.close()
         except sqlite3.Error as e:
             print(f"   Error reading database: {e}")
+
+
+def cmd_uninstall(args):
+    """Uninstall vibe-check data and Claude Code skills."""
+    import shutil
+
+    install_dir = Path.home() / ".vibe-check"
+    skills_dir = Path.home() / ".claude" / "skills"
+    skills_to_remove = [
+        "claude-stats.md",
+        "search-conversations.md",
+        "analyze-tools.md",
+        "recent-work.md",
+        "view-stats.md",
+        "get-session-id.md",
+    ]
+
+    # Show what will be removed
+    print("\n🧜 Vibe Check Uninstaller")
+    print("=" * 50)
+    print("\nThis will remove:")
+    print(f"  - Claude Code skills from {skills_dir}")
+    print(f"  - Data directory: {install_dir}")
+    print("    (config, database, logs, PID file)")
+
+    is_brew = is_homebrew_service()
+    if is_brew:
+        print("\n⚠️  Note: After this, also run:")
+        print("      brew uninstall vibe-check")
+
+    print("\nYour server account will NOT be deleted.")
+    print()
+
+    # Confirm
+    try:
+        response = input("Are you sure you want to uninstall? (y/N): ").strip().lower()
+        if response not in ["y", "yes"]:
+            print("\nUninstall cancelled.")
+            return
+    except (EOFError, KeyboardInterrupt):
+        print("\n\nUninstall cancelled.")
+        return
+
+    print()
+
+    # Stop running processes
+    pid = is_running()
+    if pid:
+        print("Stopping vibe-check process...")
+        if is_brew and is_homebrew_service_running():
+            subprocess.run(["brew", "services", "stop", "vibe-check"], capture_output=True)
+        else:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(1)
+            except ProcessLookupError:
+                pass
+        print("✓ Process stopped")
+
+    # Remove skills
+    if skills_dir.exists():
+        removed_count = 0
+        for skill in skills_to_remove:
+            skill_path = skills_dir / skill
+            if skill_path.exists():
+                skill_path.unlink()
+                removed_count += 1
+        if removed_count > 0:
+            print(f"✓ Removed {removed_count} Claude Code skills")
+        else:
+            print("✓ No Claude Code skills to remove")
+    else:
+        print("✓ Skills directory not found (nothing to remove)")
+
+    # Remove data directory
+    if install_dir.exists():
+        shutil.rmtree(install_dir)
+        print(f"✓ Removed {install_dir}")
+    else:
+        print(f"✓ Data directory not found (nothing to remove)")
+
+    print("\n" + "=" * 50)
+    print("✅ Uninstall complete!")
+
+    if is_brew:
+        print("\n⚠️  To complete uninstall, also run:")
+        print("      brew uninstall vibe-check")
+
+    print("\nTo reinstall later:")
+    print("  brew install wanderingstan/tap/vibe-check")
+    print("  # or: curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash")
+    print()
 
 
 def cmd_logs(args):
@@ -1680,7 +1830,7 @@ def cmd_auth_login(args):
         config = {
             "api": {"enabled": True, "url": api_url, "api_key": ""},
             "monitor": {"conversation_dir": "~/.claude/projects"},
-            "sqlite": {"enabled": True, "database_path": "~/.vibe-check/vibe_check.db"}
+            "sqlite": {"enabled": True, "database_path": "~/.vibe-check/vibe_check.db"},
         }
     else:
         with open(config_path, "r") as f:
@@ -1691,7 +1841,7 @@ def cmd_auth_login(args):
         if "sqlite" not in config:
             config["sqlite"] = {
                 "enabled": True,
-                "database_path": "~/.vibe-check/vibe_check.db"
+                "database_path": "~/.vibe-check/vibe_check.db",
             }
 
     # Remove trailing /api if present for the auth endpoint base
@@ -1708,7 +1858,7 @@ def cmd_auth_login(args):
             f"{auth_base}/api/cli/auth/start",
             json={},
             headers={"User-Agent": "vibe-check-cli/1.0"},
-            timeout=10
+            timeout=10,
         )
         response.raise_for_status()
         data = response.json()
@@ -1745,7 +1895,7 @@ def cmd_auth_login(args):
                     f"{auth_base}/api/cli/auth/poll",
                     json={"device_code": device_code},
                     headers={"User-Agent": "vibe-check-cli/1.0"},
-                    timeout=10
+                    timeout=10,
                 )
 
                 if poll_response.status_code == 200:
@@ -1860,9 +2010,9 @@ def run_monitor(args):
             "sqlite": {
                 "enabled": True,
                 "database_path": "~/.vibe-check/vibe_check.db",
-                "user_name": os.environ.get("USER", "unknown")
+                "user_name": os.environ.get("USER", "unknown"),
             },
-            "monitor": {"conversation_dir": "~/.claude/projects"}
+            "monitor": {"conversation_dir": "~/.claude/projects"},
         }
         with open(config_path, "w") as f:
             json.dump(default_config, f, indent=2)
@@ -1945,6 +2095,7 @@ Commands:
   restart       Restart vibe-check process
   status        Check if vibe-check process is running
   logs          View vibe-check logs
+  uninstall     Remove vibe-check data and Claude Code skills
   auth login    Authenticate with the vibe-check server
   auth status   Show current authentication status
   auth logout   Remove stored API key
@@ -1986,8 +2137,10 @@ Examples:
         "start", help="Start vibe-check process in background"
     )
     parser_start.add_argument(
-        "--foreground", "-f", action="store_true",
-        help="Run in foreground (for systemd/launchd)"
+        "--foreground",
+        "-f",
+        action="store_true",
+        help="Run in foreground (for systemd/launchd)",
     )
     parser_start.set_defaults(func=cmd_start)
 
@@ -2020,11 +2173,17 @@ Examples:
     )
     parser_logs.set_defaults(func=cmd_logs)
 
-    # Auth command with subcommands
-    parser_auth = subparsers.add_parser(
-        "auth", help="Authentication commands"
+    # Uninstall command
+    parser_uninstall = subparsers.add_parser(
+        "uninstall", help="Remove vibe-check data and Claude Code skills"
     )
-    auth_subparsers = parser_auth.add_subparsers(dest="auth_command", help="Auth command")
+    parser_uninstall.set_defaults(func=cmd_uninstall)
+
+    # Auth command with subcommands
+    parser_auth = subparsers.add_parser("auth", help="Authentication commands")
+    auth_subparsers = parser_auth.add_subparsers(
+        dest="auth_command", help="Auth command"
+    )
 
     # auth login
     parser_auth_login = auth_subparsers.add_parser(

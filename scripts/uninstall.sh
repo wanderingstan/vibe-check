@@ -33,6 +33,7 @@ echo -e "  - Homebrew package (if installed via brew)"
 echo -e "  - Installation directory: $INSTALL_DIR"
 echo -e "  - All conversation data and state"
 echo -e "  - Configuration file (including API key)"
+echo -e "  - Claude Code skills (from ~/.claude/skills/)"
 echo ""
 echo -e "${YELLOW}Note: This will NOT delete your account on the server.${NC}"
 echo -e "${YELLOW}Your API key will remain valid if you reinstall.${NC}"
@@ -88,6 +89,33 @@ if [ -f "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" ]; then
     launchctl unload "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" 2>/dev/null || true
     rm -f "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist"
     echo -e "${GREEN}✓ LaunchAgent removed${NC}"
+fi
+
+# Remove Claude Code skills
+SKILLS_DIR="$HOME/.claude/skills"
+SKILLS_TO_REMOVE=(
+    "claude-stats.md"
+    "search-conversations.md"
+    "analyze-tools.md"
+    "recent-work.md"
+    "view-stats.md"
+    "get-session-id.md"
+)
+
+if [ -d "$SKILLS_DIR" ]; then
+    echo -e "${BLUE}Removing Claude Code skills...${NC}"
+    removed_count=0
+    for skill in "${SKILLS_TO_REMOVE[@]}"; do
+        if [ -f "$SKILLS_DIR/$skill" ]; then
+            rm -f "$SKILLS_DIR/$skill"
+            ((removed_count++))
+        fi
+    done
+    if [ $removed_count -gt 0 ]; then
+        echo -e "${GREEN}✓ Removed $removed_count Claude Code skills${NC}"
+    else
+        echo -e "${GREEN}✓ No Claude Code skills to remove${NC}"
+    fi
 fi
 
 # Remove installation directory
