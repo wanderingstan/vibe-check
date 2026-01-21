@@ -3,8 +3,8 @@ class VibeCheck < Formula
 
   desc "Claude Code conversation monitoring and analytics"
   homepage "https://github.com/wanderingstan/vibe-check"
-  url "https://github.com/wanderingstan/vibe-check/archive/refs/tags/v1.0.15.tar.gz"
-  sha256 "aca9a7500bd690d11d542f81d77f663d5f502a3c49547d4bb5a5ffd09de17df8"
+  url "https://github.com/wanderingstan/vibe-check/archive/refs/tags/v1.0.16.tar.gz"
+  sha256 "fc4e2a797733c43fc7a04ac5e6aaf0409e2da7e838450ccb50a62121c916c2ef"
   license "MIT"
   head "https://github.com/wanderingstan/vibe-check.git", branch: "main"
 
