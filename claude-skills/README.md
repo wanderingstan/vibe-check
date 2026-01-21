@@ -16,7 +16,7 @@ From the vibe-check directory, run:
 ./claude-skills/install-skills.sh
 ```
 
-This will copy all 6 skills to `~/.claude/skills/`.
+This will copy all 7 skills to `~/.claude/skills/`.
 
 ### Manual Install
 
@@ -74,6 +74,15 @@ Get the current session's identifiers:
 - Returns session ID and log file path
 - Useful for debugging and cross-referencing
 
+### 6. [share-session.md](share-session.md)
+**Triggers:** "share session", "share this session", "get share link", "create share link", "share my work"
+
+Create a public share link for the current session:
+- Gets the current session ID automatically
+- Creates a public share via the vibecheck API
+- Returns a shareable URL anyone can view
+- Requires remote sync to be configured (`vibe-check auth login`)
+
 ## How It Works
 
 1. **Installation:** Skills are copied to `~/.claude/skills/`
@@ -105,6 +114,9 @@ Claude: [Finds all conversations mentioning authentication]
 
 You: "what tools do I use most?"
 Claude: [Analyzes and shows tool usage patterns]
+
+You: "share this session"
+Claude: [Creates a public share link and displays the URL]
 ```
 
 ## Customization
@@ -151,6 +163,7 @@ rm ~/.claude/skills/analyze-tools.md
 rm ~/.claude/skills/recent-work.md
 rm ~/.claude/skills/view-stats.md
 rm ~/.claude/skills/get-session-id.md
+rm ~/.claude/skills/share-session.md
 ```
 
 Or to remove all skills:
