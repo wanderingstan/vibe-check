@@ -128,46 +128,12 @@ class VibeCheck < Formula
     end
     s += <<~EOS
 
-      ██╗   ██╗██╗██████╗ ███████╗       ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗
-      ██║   ██║██║██╔══██╗██╔════╝      ██╔════╝██║  ██║██╔════╝██╔════╝██║ ██╔╝
-      ██║   ██║██║██████╔╝█████╗  █████╗██║     ███████║█████╗  ██║     █████╔╝
-      ╚██╗ ██╔╝██║██╔══██╗██╔══╝  ╚════╝██║     ██╔══██║██╔══╝  ██║     ██╔═██╗
-       ╚████╔╝ ██║██████╔╝███████╗      ╚██████╗██║  ██║███████╗╚██████╗██║  ██╗
-        ╚═══╝  ╚═╝╚═════╝ ╚══════╝       ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝
+      🧜 Vibe Check installed!
 
-                         ~ Claude Code Analytics ~
+      Run this command to start monitoring:
 
-      ╔═══════════════════════════════════════════════════════════════════════╗
-      ║                                                                       ║
-      ║  🚀 IMPORTANT: Run this command to start monitoring:                  ║
-      ║                                                                       ║
-      ║                      vibe-check start                                 ║
-      ║                                                                       ║
-      ╚═══════════════════════════════════════════════════════════════════════╝
+          vibe-check start
 
-      📁 Files:
-        Config:   ~/.vibe-check/config.json
-        Database: ~/.vibe-check/vibe_check.db
-        Skills:   ~/.claude/skills/
-
-      🛠️  Commands:
-        vibe-check start    # Start & enable auto-start on boot
-        vibe-check stop     # Stop & disable auto-start
-        vibe-check restart  # Restart the service
-        vibe-check status   # Check if running
-        vibe-check logs     # View logs
-
-      🔍 Query your conversations:
-        vibe-check-query "SELECT COUNT(*) FROM conversation_events"
-
-      ✨ Claude Code skills installed:
-        • "claude stats" - Usage statistics
-        • "search my conversations for X" - Search history
-        • "what have I been working on?" - Recent activity
-
-      ☁️  Remote API sync (optional):
-        vibe-check auth login
-        vibe-check restart
     EOS
     s
   end

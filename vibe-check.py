@@ -1303,7 +1303,10 @@ def cmd_start(args):
         print("🧜 Starting via Homebrew service...")
         result = subprocess.run(["brew", "services", "start", "vibe-check"])
         if result.returncode == 0:
-            print("✅ vibe-check service started (auto-starts on boot)")
+            print("✅ vibe-check service started (auto-starts on boot)\n")
+            # Wait for service to start, then show status
+            time.sleep(2)
+            cmd_status(args)
         else:
             print("❌ Failed to start Homebrew service")
         return
