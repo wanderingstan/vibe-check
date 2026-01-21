@@ -1270,6 +1270,34 @@ def cmd_start(args):
         print(f"✅ Monitor is already running (PID: {pid})")
         return
 
+    # Check if authenticated, offer to login on first start
+    config_path = get_config_path()
+    needs_auth_prompt = False
+
+    if config_path.exists():
+        try:
+            with open(config_path, "r") as f:
+                config = json.load(f)
+            api_key = config.get("api", {}).get("api_key", "")
+            if not api_key:
+                needs_auth_prompt = True
+        except (json.JSONDecodeError, IOError):
+            needs_auth_prompt = True
+    else:
+        needs_auth_prompt = True
+
+    if needs_auth_prompt:
+        print("\n☁️  Remote sync is not configured.")
+        print("   This allows viewing your stats at vibecheck.wanderingstan.com")
+        print("\nWould you like to authenticate now? (y/n): ", end="", flush=True)
+        try:
+            response = input().strip().lower()
+            if response in ["y", "yes"]:
+                cmd_auth_login(args)
+                print()  # blank line after auth
+        except (EOFError, KeyboardInterrupt):
+            print("\nSkipping authentication. Run 'vibe-check auth login' later.")
+
     # If homebrew install and not forcing foreground, use brew services
     if is_homebrew_service() and not getattr(args, 'foreground', False):
         print("🧜 Starting via Homebrew service...")
