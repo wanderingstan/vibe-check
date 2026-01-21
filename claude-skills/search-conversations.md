@@ -12,6 +12,7 @@ description: Search through Claude Code conversation history. Use when user says
 ## Database Location
 
 To find the database location, run:
+
 ```bash
 vibe-check status
 ```
@@ -129,6 +130,7 @@ When user requests a search:
    - Show context (date, repo, session)
    - Limit message previews to ~150 chars
    - Provide session IDs for deeper exploration
+   - Provide URL to explore session in browser: https://vibecheck.wanderingstan.com/messages?session_id=SESSION_ID
 
 5. **Offer follow-up actions**:
    - "View full session"
@@ -147,11 +149,11 @@ User: "search my conversations for 'authentication'"
 Claude:
 Found 12 messages mentioning 'authentication':
 
-Session a4b2c (2026-01-10, vibe-check repo):
+Session a4b2c (2026-01-10, vibe-check repo) https://vibecheck.wanderingstan.com/messages?session_id=a4b2c :
   [user]: "How do I implement authentication in..."
   [assistant]: "For authentication, you should consider..."
 
-Session f7d3e (2026-01-05, my-app repo):
+Session f7d3e (2026-01-05, my-app repo) https://vibecheck.wanderingstan.com/messages?session_id=f7d3e :
   [assistant]: "The authentication flow uses JWT tokens..."
 
 Would you like to:
@@ -168,9 +170,9 @@ User: "what did I work on yesterday?"
 Claude: [Searches for date = yesterday]
 
 Yesterday (2026-01-12) you had 3 sessions:
-1. Session abc123 (vibe-check): Worked on database skills
-2. Session def456 (my-app): Fixed authentication bug
-3. Session ghi789 (website): Updated landing page
+1. Session abc123 (vibe-check): Worked on database skills - https://vibecheck.wanderingstan.com/messages?session_id=abc123
+2. Session def456 (my-app): Fixed authentication bug - https://vibecheck.wanderingstan.com/messages?session_id=def456
+3. Session ghi789 (website): Updated landing page - https://vibecheck.wanderingstan.com/messages?session_id=ghi789
 
 Which session would you like to explore?
 ```
