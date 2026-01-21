@@ -29,6 +29,7 @@ fi
 
 # Show what will be removed
 echo -e "${YELLOW}This will remove:${NC}"
+echo -e "  - Homebrew package (if installed via brew)"
 echo -e "  - Installation directory: $INSTALL_DIR"
 echo -e "  - All conversation data and state"
 echo -e "  - Configuration file (including API key)"
@@ -50,6 +51,13 @@ if command -v brew &> /dev/null && brew services list 2>/dev/null | grep -q "vib
     echo -e "${BLUE}Stopping Homebrew service...${NC}"
     brew services stop vibe-check 2>/dev/null || true
     echo -e "${GREEN}✓ Homebrew service stopped${NC}"
+fi
+
+# Uninstall Homebrew package if installed
+if command -v brew &> /dev/null && brew list vibe-check &> /dev/null; then
+    echo -e "${BLUE}Uninstalling Homebrew package...${NC}"
+    brew uninstall vibe-check 2>/dev/null || true
+    echo -e "${GREEN}✓ Homebrew package uninstalled${NC}"
 fi
 
 # Stop any running monitor processes
