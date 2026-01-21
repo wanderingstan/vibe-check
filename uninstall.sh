@@ -45,9 +45,16 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+# Stop Homebrew service if running
+if command -v brew &> /dev/null && brew services list 2>/dev/null | grep -q "vibe-check.*started"; then
+    echo -e "${BLUE}Stopping Homebrew service...${NC}"
+    brew services stop vibe-check 2>/dev/null || true
+    echo -e "${GREEN}✓ Homebrew service stopped${NC}"
+fi
+
 # Stop any running monitor processes
 echo -e "${BLUE}Checking for running monitor processes...${NC}"
-MONITOR_PIDS=$(pgrep -f "$INSTALL_DIR/vibe-check.py" || true)
+MONITOR_PIDS=$(pgrep -f "vibe-check.py" || true)
 if [ ! -z "$MONITOR_PIDS" ]; then
     echo -e "${YELLOW}Stopping monitor processes: $MONITOR_PIDS${NC}"
     kill $MONITOR_PIDS 2>/dev/null || true
