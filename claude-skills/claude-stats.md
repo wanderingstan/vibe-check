@@ -16,7 +16,7 @@ To find the database location, run:
 vibe-check status
 ```
 
-The default Homebrew location is: `/opt/homebrew/var/vibe-check/vibe_check.db`
+The default location is: `~/.vibe-check/vibe_check.db`
 
 **Note:** If the status shows no PID, vibe-check is not running and the database may be stale. Start it with `vibe-check start`.
 
@@ -30,7 +30,7 @@ sqlite3 "file:/path/to/vibe_check.db?mode=ro" "SELECT ..."
 
 Example:
 ```bash
-sqlite3 "file:/opt/homebrew/var/vibe-check/vibe_check.db?mode=ro" "SELECT COUNT(*) FROM conversation_events;"
+sqlite3 "file:$HOME/.vibe-check/vibe_check.db?mode=ro" "SELECT COUNT(*) FROM conversation_events;"
 ```
 
 ---

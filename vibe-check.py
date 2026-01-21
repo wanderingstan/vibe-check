@@ -1027,12 +1027,10 @@ def check_claude_skills():
 def get_data_dir() -> Path:
     """Get the data directory path.
 
-    For Homebrew installations: uses VIBE_CHECK_HOME environment variable
-    For manual installations: uses <script_dir>/data/
+    Always uses ~/.vibe-check/ for all installation types.
+    Homebrew installs symlink /opt/homebrew/var/vibe-check -> ~/.vibe-check
     """
-    if "VIBE_CHECK_HOME" in os.environ:
-        return Path(os.environ["VIBE_CHECK_HOME"])
-    return Path(__file__).parent / "data"
+    return Path.home() / ".vibe-check"
 
 
 def get_pid_file() -> Path:

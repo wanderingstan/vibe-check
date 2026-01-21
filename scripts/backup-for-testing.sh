@@ -11,7 +11,8 @@
 
 set -e
 
-DATA_DIR="/opt/homebrew/var/vibe-check"
+# Unified data location for all install types
+DATA_DIR="$HOME/.vibe-check"
 LOG_DIR="/opt/homebrew/var/log"
 LAUNCHAGENT="$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist"
 SKILLS_DIR="$HOME/.claude/skills"
@@ -59,6 +60,7 @@ echo "This will:"
 echo "  1. Stop the vibe-check service"
 echo "  2. Backup data, logs, service config, and skills to $BACKUP_DIR"
 echo "  3. Clear the original locations (for clean install testing)"
+echo "  4. Uninstall the Homebrew formula (brew uninstall vibe-check)"
 echo ""
 read -p "Continue? [y/N] " -n 1 -r
 echo
@@ -125,9 +127,9 @@ if [ -d "$DATA_DIR" ]; then
     cp -r "$DATA_DIR/"* "$BACKUP_DIR/data/" 2>/dev/null || true
     print_status "Backed up data directory"
 
-    # Clear original
-    rm -rf "$DATA_DIR"/*
-    print_status "Cleared data directory"
+    # Clear original - remove entire directory to ensure clean state
+    rm -rf "$DATA_DIR"
+    print_status "Removed data directory"
 else
     print_warning "No data directory found at $DATA_DIR"
 fi
@@ -181,6 +183,16 @@ if [ -d "$SKILLS_DIR" ]; then
     done
 else
     print_warning "No skills directory found at $SKILLS_DIR"
+fi
+
+# Uninstall Homebrew formula (if installed)
+if brew list vibe-check &>/dev/null; then
+    echo ""
+    echo "Uninstalling Homebrew formula..."
+    brew uninstall vibe-check
+    print_status "Homebrew formula uninstalled"
+else
+    print_warning "vibe-check not installed via Homebrew"
 fi
 
 # Write backup metadata

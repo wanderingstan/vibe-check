@@ -79,17 +79,13 @@ class VibeCheck < Formula
     (bin/"vibe-check").write <<~EOS
       #!/bin/bash
       export PYTHONPATH="#{libexec}"
-      export VIBE_CHECK_HOME="#{var}/vibe-check"
       exec "#{libexec}/bin/python3" "#{libexec}/vibe-check.py" "$@"
     EOS
     chmod 0755, bin/"vibe-check"
 
-    # Create query helper wrapper
+    # Create query helper wrapper (points to unified location)
     (bin/"vibe-check-query").write_env_script libexec/"scripts/query-helper.sh",
-      VIBE_CHECK_DB: var/"vibe-check/vibe_check.db"
-
-    # Create runtime directory
-    (var/"vibe-check").mkpath
+      VIBE_CHECK_DB: "#{Dir.home}/.vibe-check/vibe_check.db"
   end
 
   def post_install
@@ -102,8 +98,32 @@ class VibeCheck < Formula
       opoo "Then run Claude Code at least once before starting vibe-check."
     end
 
+    # Unified data directory: always ~/.vibe-check
+    # Symlink from Homebrew var for compatibility
+    data_dir = "#{Dir.home}/.vibe-check"
+    FileUtils.mkdir_p(data_dir)
+
+    # Create symlink from var/vibe-check -> ~/.vibe-check
+    var_dir = var/"vibe-check"
+    if var_dir.directory? && !var_dir.symlink?
+      # Migrate existing data from old Homebrew location
+      ohai "Migrating data from #{var_dir} to #{data_dir}..."
+      Dir.glob("#{var_dir}/*", File::FNM_DOTMATCH).each do |f|
+        next if File.basename(f) == "." || File.basename(f) == ".."
+        dest = "#{data_dir}/#{File.basename(f)}"
+        unless File.exist?(dest)
+          FileUtils.mv(f, dest)
+        end
+      end
+      FileUtils.rm_rf(var_dir)
+      FileUtils.ln_sf(data_dir, var_dir)
+      ohai "Migration complete!"
+    elsif !var_dir.exist?
+      FileUtils.ln_sf(data_dir, var_dir)
+    end
+
     # Create default config if doesn't exist
-    config_file = var/"vibe-check/config.json"
+    config_file = Pathname.new("#{data_dir}/config.json")
     unless config_file.exist?
       config_file.write <<~JSON
         {
@@ -114,7 +134,7 @@ class VibeCheck < Formula
           },
           "sqlite": {
             "enabled": true,
-            "database_path": "#{var}/vibe-check/vibe_check.db",
+            "database_path": "~/.vibe-check/vibe_check.db",
             "user_name": "#{ENV["USER"]}"
           },
           "monitor": {
@@ -196,8 +216,8 @@ class VibeCheck < Formula
       ╚═══════════════════════════════════════════════════════════════════════╝
 
       📁 Files:
-        Config:   #{var}/vibe-check/config.json
-        Database: #{var}/vibe-check/vibe_check.db
+        Config:   ~/.vibe-check/config.json
+        Database: ~/.vibe-check/vibe_check.db
         Skills:   ~/.claude/skills/
 
       🛠️  Commands:

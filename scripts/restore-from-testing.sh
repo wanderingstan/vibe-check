@@ -12,7 +12,8 @@
 
 set -e
 
-DATA_DIR="/opt/homebrew/var/vibe-check"
+# Unified data location for all install types
+DATA_DIR="$HOME/.vibe-check"
 LOG_DIR="/opt/homebrew/var/log"
 LAUNCHAGENT_DIR="$HOME/Library/LaunchAgents"
 SKILLS_DIR="$HOME/.claude/skills"
@@ -82,15 +83,17 @@ echo "  1. Stop any running vibe-check service"
 if [ "$MERGE_EVENTS" = true ]; then
     echo "  2. Merge conversation_events from current DB into backup"
     echo "  3. Restore data, logs, service config, and skills from backup"
-    echo "  4. Start the vibe-check service"
+    echo "  4. Reinstall Homebrew formula if needed"
+    echo "  5. Start the vibe-check service"
     if [ "$KEEP_BACKUP" = false ]; then
-        echo "  5. Remove the backup directory"
+        echo "  6. Remove the backup directory"
     fi
 else
     echo "  2. Restore data, logs, service config, and skills from backup"
-    echo "  3. Start the vibe-check service"
+    echo "  3. Reinstall Homebrew formula if needed"
+    echo "  4. Start the vibe-check service"
     if [ "$KEEP_BACKUP" = false ]; then
-        echo "  4. Remove the backup directory"
+        echo "  5. Remove the backup directory"
     fi
 fi
 echo ""
@@ -223,10 +226,18 @@ else
     print_warning "No skills to restore"
 fi
 
+# Reinstall Homebrew formula if not present
+echo ""
+if ! brew list vibe-check &>/dev/null; then
+    echo "Reinstalling Homebrew formula..."
+    brew install wanderingstan/vibe-check/vibe-check
+    print_status "Homebrew formula reinstalled"
+fi
+
 # Start service
 echo ""
 echo "Starting vibe-check service..."
-if brew services list | grep -q "vibe-check"; then
+if brew list vibe-check &>/dev/null; then
     brew services start vibe-check 2>/dev/null || true
     print_status "Service started via Homebrew"
 elif [ -f "$LAUNCHAGENT_DIR/com.vibecheck.monitor.plist" ]; then

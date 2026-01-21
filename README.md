@@ -280,47 +280,27 @@ See [server-php/README.md](server-php/README.md) for server installation and con
 
 ## Data Locations
 
-Data files are stored in different locations depending on your installation method:
+All installation methods use the same unified location: `~/.vibe-check/`
 
-### Homebrew Installation
+| File         | Path                          |
+| ------------ | ----------------------------- |
+| **Database** | `~/.vibe-check/vibe_check.db` |
+| **Config**   | `~/.vibe-check/config.json`   |
+| **PID file** | `~/.vibe-check/.monitor.pid`  |
+| **Log file** | `~/.vibe-check/monitor.log`   |
 
-All data lives in `/opt/homebrew/var/vibe-check/`:
-
-| File         | Path                                         |
-| ------------ | -------------------------------------------- |
-| **Database** | `/opt/homebrew/var/vibe-check/vibe_check.db` |
-| **Config**   | `/opt/homebrew/var/vibe-check/config.json`   |
-| **PID file** | `/opt/homebrew/var/vibe-check/.monitor.pid`  |
-| **Log file** | `/opt/homebrew/var/vibe-check/monitor.log`   |
-
-When running via `vibe-check start` (which uses brew services), additional logs go to:
+When running via `vibe-check start` (Homebrew), additional logs go to:
 
 - `/opt/homebrew/var/log/vibe-check.log`
 - `/opt/homebrew/var/log/vibe-check.error.log`
 
-### Manual/Curl Installation
-
-All data lives in the `data/` subdirectory of the installation (e.g., `~/.vibe-check/data/`):
-
-| File         | Path                               |
-| ------------ | ---------------------------------- |
-| **Database** | `<install_dir>/data/vibe_check.db` |
-| **Config**   | `<install_dir>/data/config.json`   |
-| **PID file** | `<install_dir>/data/.monitor.pid`  |
-| **Log file** | `<install_dir>/data/monitor.log`   |
-
-This keeps data files separate from source code and documentation.
+**Note:** Homebrew installations symlink `/opt/homebrew/var/vibe-check` → `~/.vibe-check` for compatibility.
 
 ### Querying Database Location
 
-To find your database programmatically:
-
 ```bash
-# Homebrew installation
-echo $VIBE_CHECK_DB   # Set by vibe-check-query wrapper
-
-# Or check config.json
-cat /opt/homebrew/var/vibe-check/config.json | grep database_path
+# Check your config
+cat ~/.vibe-check/config.json | grep database_path
 ```
 
 ## Files

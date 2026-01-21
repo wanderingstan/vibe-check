@@ -16,7 +16,7 @@ To find the database location, run:
 vibe-check status
 ```
 
-The default Homebrew location is: `/opt/homebrew/var/vibe-check/vibe_check.db`
+The default location is: `~/.vibe-check/vibe_check.db`
 
 **Note:** If the status shows no PID, vibe-check is not running and the database may be stale. Start it with `vibe-check start`.
 
@@ -113,7 +113,7 @@ This session has been active since [start time if you query for it].
 Here's the full query to run (substitute your marker and database path from `vibe-check status`):
 
 ```bash
-sqlite3 "file:/opt/homebrew/var/vibe-check/vibe_check.db?mode=ro" \
+sqlite3 "file:$HOME/.vibe-check/vibe_check.db?mode=ro" \
   "SELECT event_session_id, file_name, inserted_at FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_abc123%' ORDER BY inserted_at DESC LIMIT 1;"
 ```
 

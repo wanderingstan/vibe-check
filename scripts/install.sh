@@ -265,13 +265,14 @@ if [ -d "$INSTALL_DIR" ]; then
     fi
     echo -e "${GREEN}✓ Dependencies updated${NC}"
 
-    # Check if config.json exists
-    if [ ! -f "config.json" ]; then
+    # Check if config.json exists (unified location: ~/.vibe-check/)
+    CONFIG_FILE="$HOME/.vibe-check/config.json"
+    if [ ! -f "$CONFIG_FILE" ]; then
         echo -e "${YELLOW}⚠ Configuration file missing, need to authenticate...${NC}"
         NEED_AUTH=true
     else
         # Check if already authenticated
-        API_KEY=$(grep -o '"api_key":"[^"]*' config.json 2>/dev/null | cut -d'"' -f4)
+        API_KEY=$(grep -o '"api_key":"[^"]*' "$CONFIG_FILE" 2>/dev/null | cut -d'"' -f4)
         if [ -z "$API_KEY" ] || [ "$API_KEY" = "" ]; then
             echo -e "${YELLOW}⚠ Not authenticated, need to login...${NC}"
             NEED_AUTH=true
@@ -453,15 +454,15 @@ if [ "$RUNNING_FROM_REPO" != true ]; then
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>$INSTALL_DIR/data/launchd.log</string>
+    <string>$HOME/.vibe-check/launchd.log</string>
     <key>StandardErrorPath</key>
-    <string>$INSTALL_DIR/data/launchd.error.log</string>
+    <string>$HOME/.vibe-check/launchd.error.log</string>
 </dict>
 </plist>
 PLIST
 
-        # Ensure data directory exists for logs
-        mkdir -p "$INSTALL_DIR/data"
+        # Ensure data directory exists
+        mkdir -p "$HOME/.vibe-check"
 
         launchctl load "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" 2>/dev/null || true
         echo -e "${GREEN}✓ LaunchAgent installed (starts on login)${NC}"

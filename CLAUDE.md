@@ -100,14 +100,13 @@ sqlite3 "file:<db_path>?mode=ro" "SELECT ..."
 
 ## Data Locations
 
-**Homebrew install:**
-- DB: `/opt/homebrew/var/vibe-check/vibe_check.db`
-- Config: `/opt/homebrew/var/vibe-check/config.json`
-- Logs: `/opt/homebrew/var/log/vibe-check.log`
-
-**Manual install:**
-- All in `<install_dir>/data/`
+**All install types use unified location:**
+- DB: `~/.vibe-check/vibe_check.db`
+- Config: `~/.vibe-check/config.json`
+- PID: `~/.vibe-check/.monitor.pid`
 - Skills: `~/.claude/skills/`
+
+Note: Homebrew symlinks `/opt/homebrew/var/vibe-check` → `~/.vibe-check`
 
 ## Key Patterns
 
