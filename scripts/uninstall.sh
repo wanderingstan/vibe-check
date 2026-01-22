@@ -94,20 +94,27 @@ fi
 # Remove Claude Code skills
 SKILLS_DIR="$HOME/.claude/skills"
 SKILLS_TO_REMOVE=(
-    "claude-stats.md"
-    "search-conversations.md"
-    "analyze-tools.md"
-    "recent-work.md"
-    "view-stats.md"
-    "get-session-id.md"
+    "claude-stats"
+    "search-conversations"
+    "analyze-tools"
+    "recent-work"
+    "view-stats"
+    "get-session-id"
+    "share-session"
 )
 
 if [ -d "$SKILLS_DIR" ]; then
     echo -e "${BLUE}Removing Claude Code skills...${NC}"
     removed_count=0
     for skill in "${SKILLS_TO_REMOVE[@]}"; do
-        if [ -f "$SKILLS_DIR/$skill" ]; then
-            rm -f "$SKILLS_DIR/$skill"
+        # Remove new directory format (skill-name/SKILL.md)
+        if [ -d "$SKILLS_DIR/$skill" ]; then
+            rm -rf "$SKILLS_DIR/$skill"
+            ((removed_count++))
+        fi
+        # Also remove old flat format (skill-name.md) if present
+        if [ -f "$SKILLS_DIR/${skill}.md" ]; then
+            rm -f "$SKILLS_DIR/${skill}.md"
             ((removed_count++))
         fi
     done

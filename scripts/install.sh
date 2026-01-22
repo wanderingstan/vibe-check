@@ -502,21 +502,25 @@ SKILLS_DEST="$HOME/.claude/skills"
 if [ -d "$SKILLS_SRC" ]; then
     mkdir -p "$SKILLS_DEST"
 
-    # Copy skill files (exclude README and HOW-IT-WORKS)
-    for skill in "$SKILLS_SRC"/*.md; do
-        filename=$(basename "$skill")
-        # Skip documentation files
-        if [ "$filename" = "README.md" ] || [ "$filename" = "HOW-IT-WORKS.md" ]; then
+    # Copy skill directories (each skill is a directory with SKILL.md inside)
+    for skill_dir in "$SKILLS_SRC"/*/; do
+        skill_name=$(basename "$skill_dir")
+        # Skip if not a directory or no SKILL.md inside
+        if [ ! -d "$skill_dir" ] || [ ! -f "$skill_dir/SKILL.md" ]; then
             continue
         fi
 
-        dest="$SKILLS_DEST/$filename"
-        # Backup existing file if present
-        if [ -f "$dest" ]; then
-            backup="$SKILLS_DEST/.backup-$(date +%s)-$filename"
-            cp "$dest" "$backup"
+        dest_dir="$SKILLS_DEST/$skill_name"
+        # Backup existing skill directory if present
+        if [ -d "$dest_dir" ]; then
+            backup="$SKILLS_DEST/.backup-$(date +%s)-$skill_name"
+            mv "$dest_dir" "$backup"
         fi
-        cp "$skill" "$dest"
+        # Also clean up old flat format if present
+        if [ -f "$SKILLS_DEST/${skill_name}.md" ]; then
+            rm "$SKILLS_DEST/${skill_name}.md"
+        fi
+        cp -r "$skill_dir" "$dest_dir"
     done
 
     echo -e "${GREEN}✓ Claude Code skills installed to ~/.claude/skills/${NC}"

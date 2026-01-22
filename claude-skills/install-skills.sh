@@ -1,8 +1,8 @@
 #!/bin/bash
 # Install Claude Code skills for vibe-check usage analysis
 #
-# This script installs vibe-check Claude Code skills to your ~/.claude/skills directory
-# using the correct directory structure: skill-name/SKILL.md
+# This script installs vibe-check Claude Code skills to your ~/.claude/skills directory.
+# Skills are already in the correct directory structure: skill-name/SKILL.md
 #
 # Claude Code requires skills to be in this format for auto-discovery.
 
@@ -11,8 +11,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILLS_DIR="$HOME/.claude/skills"
 BACKUP_DIR="$HOME/.claude/skills-backup-$(date +%Y%m%d-%H%M%S)"
-
-SKILLS="claude-stats search-conversations analyze-tools recent-work view-stats get-session-id share-session"
 
 echo "🔧 Installing Claude Code skills for vibe-check..."
 echo ""
@@ -23,51 +21,75 @@ if [ ! -d "$SKILLS_DIR" ]; then
     mkdir -p "$SKILLS_DIR"
 fi
 
-# Backup existing skills if any match (check both old flat format and new directory format)
+# Find all skill directories (directories containing SKILL.md)
+INSTALLED=0
 NEEDS_BACKUP=false
-for skill in $SKILLS; do
-    if [ -f "$SKILLS_DIR/${skill}.md" ] || [ -d "$SKILLS_DIR/${skill}" ]; then
+
+for skill_dir in "$SCRIPT_DIR"/*/; do
+    skill_name=$(basename "$skill_dir")
+
+    # Skip if not a directory or no SKILL.md inside
+    if [ ! -d "$skill_dir" ] || [ ! -f "$skill_dir/SKILL.md" ]; then
+        continue
+    fi
+
+    # Check if backup needed
+    if [ -f "$SKILLS_DIR/${skill_name}.md" ] || [ -d "$SKILLS_DIR/${skill_name}" ]; then
         NEEDS_BACKUP=true
-        break
     fi
 done
 
 if [ "$NEEDS_BACKUP" = true ]; then
     echo "⚠️  Some skills already exist. Creating backup..."
     mkdir -p "$BACKUP_DIR"
-    for skill in $SKILLS; do
-        # Backup old flat format
-        if [ -f "$SKILLS_DIR/${skill}.md" ]; then
-            cp "$SKILLS_DIR/${skill}.md" "$BACKUP_DIR/"
-            rm "$SKILLS_DIR/${skill}.md"
-            echo "  Backed up & removed: ${skill}.md (old flat format)"
-        fi
-        # Backup new directory format
-        if [ -d "$SKILLS_DIR/${skill}" ]; then
-            cp -r "$SKILLS_DIR/${skill}" "$BACKUP_DIR/"
-            rm -rf "$SKILLS_DIR/${skill}"
-            echo "  Backed up & removed: ${skill}/ (directory)"
-        fi
-    done
-    echo "  Backup location: $BACKUP_DIR"
-    echo ""
 fi
 
-# Install skills with correct directory structure
+# Install each skill
 echo "Installing skills..."
-for skill in $SKILLS; do
-    mkdir -p "$SKILLS_DIR/${skill}"
-    cp "$SCRIPT_DIR/${skill}.md" "$SKILLS_DIR/${skill}/SKILL.md"
-    echo "  ✓ ${skill}/SKILL.md"
+for skill_dir in "$SCRIPT_DIR"/*/; do
+    skill_name=$(basename "$skill_dir")
+
+    # Skip if not a directory or no SKILL.md inside
+    if [ ! -d "$skill_dir" ] || [ ! -f "$skill_dir/SKILL.md" ]; then
+        continue
+    fi
+
+    dest_dir="$SKILLS_DIR/$skill_name"
+
+    # Backup old flat format if present
+    if [ -f "$SKILLS_DIR/${skill_name}.md" ]; then
+        mv "$SKILLS_DIR/${skill_name}.md" "$BACKUP_DIR/"
+        echo "  Backed up & removed: ${skill_name}.md (old flat format)"
+    fi
+
+    # Backup existing directory if present
+    if [ -d "$dest_dir" ]; then
+        cp -r "$dest_dir" "$BACKUP_DIR/"
+        rm -rf "$dest_dir"
+        echo "  Backed up & removed: ${skill_name}/ (existing)"
+    fi
+
+    # Copy skill directory
+    cp -r "$skill_dir" "$dest_dir"
+    echo "  ✓ ${skill_name}/SKILL.md"
+    INSTALLED=$((INSTALLED + 1))
 done
 
+if [ "$NEEDS_BACKUP" = true ]; then
+    echo ""
+    echo "  Backup location: $BACKUP_DIR"
+fi
+
 echo ""
-echo "✓ Installed 7 skills to ~/.claude/skills/"
+echo "✓ Installed $INSTALLED skills to ~/.claude/skills/"
 echo ""
 echo "📁 Directory structure:"
 echo "  ~/.claude/skills/"
-for skill in $SKILLS; do
-    echo "    └── ${skill}/SKILL.md"
+for skill_dir in "$SCRIPT_DIR"/*/; do
+    skill_name=$(basename "$skill_dir")
+    if [ -f "$skill_dir/SKILL.md" ]; then
+        echo "    └── ${skill_name}/SKILL.md"
+    fi
 done
 echo ""
 echo "📚 Available skills:"

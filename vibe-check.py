@@ -1709,13 +1709,15 @@ def cmd_uninstall(args):
 
     install_dir = Path.home() / ".vibe-check"
     skills_dir = Path.home() / ".claude" / "skills"
+    # Skills to remove (directory names, not filenames)
     skills_to_remove = [
-        "claude-stats.md",
-        "search-conversations.md",
-        "analyze-tools.md",
-        "recent-work.md",
-        "view-stats.md",
-        "get-session-id.md",
+        "claude-stats",
+        "search-conversations",
+        "analyze-tools",
+        "recent-work",
+        "view-stats",
+        "get-session-id",
+        "share-session",
     ]
 
     # Show what will be removed
@@ -1764,9 +1766,15 @@ def cmd_uninstall(args):
     if skills_dir.exists():
         removed_count = 0
         for skill in skills_to_remove:
-            skill_path = skills_dir / skill
-            if skill_path.exists():
-                skill_path.unlink()
+            # Remove new directory format (skill-name/SKILL.md)
+            skill_dir_path = skills_dir / skill
+            if skill_dir_path.is_dir():
+                shutil.rmtree(skill_dir_path)
+                removed_count += 1
+            # Also remove old flat format (skill-name.md) if present
+            skill_file_path = skills_dir / f"{skill}.md"
+            if skill_file_path.exists():
+                skill_file_path.unlink()
                 removed_count += 1
         if removed_count > 0:
             print(f"✓ Removed {removed_count} Claude Code skills")
