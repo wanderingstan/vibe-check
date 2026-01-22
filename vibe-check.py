@@ -1242,6 +1242,26 @@ def is_homebrew_service_running() -> bool:
     return False
 
 
+def is_systemd_service() -> bool:
+    """Check if vibe-check is installed as a systemd user service."""
+    service_file = Path.home() / ".config" / "systemd" / "user" / "vibe-check.service"
+    return service_file.exists()
+
+
+def is_systemd_service_running() -> bool:
+    """Check if vibe-check is currently running as a systemd service."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "is-active", "vibe-check"],
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() == "active"
+    except FileNotFoundError:
+        pass
+    return False
+
+
 def write_pid_file():
     """Write current process PID to file."""
     pid_file = get_pid_file()
@@ -1345,6 +1365,19 @@ def cmd_start(args):
             print("❌ Failed to start Homebrew service")
         return
 
+    # If systemd install and not forcing foreground, use systemctl
+    if is_systemd_service() and not getattr(args, "foreground", False):
+        print("🐧 Starting via systemd service...")
+        result = subprocess.run(["systemctl", "--user", "start", "vibe-check"])
+        if result.returncode == 0:
+            print("✅ vibe-check service started\n")
+            # Wait for service to start, then show status
+            time.sleep(2)
+            cmd_status(args)
+        else:
+            print("❌ Failed to start systemd service")
+        return
+
     # Set up signal handlers
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, stopping monitor...")
@@ -1398,6 +1431,16 @@ def cmd_stop(args):
             print("❌ Failed to stop Homebrew service")
         return
 
+    # Check if running as a systemd service
+    if is_systemd_service_running():
+        print("🐧 Stopping systemd service...")
+        result = subprocess.run(["systemctl", "--user", "stop", "vibe-check"])
+        if result.returncode == 0:
+            print("✅ vibe-check service stopped")
+        else:
+            print("❌ Failed to stop systemd service")
+        return
+
     pid = is_running()
     if not pid:
         print("⚠️  Monitor is not running")
@@ -1440,6 +1483,16 @@ def cmd_restart(args):
             print("✅ vibe-check service restarted")
         else:
             print("❌ Failed to restart Homebrew service")
+        return
+
+    # If systemd service, use systemctl restart
+    if is_systemd_service_running() or is_systemd_service():
+        print("🐧 Restarting systemd service...")
+        result = subprocess.run(["systemctl", "--user", "restart", "vibe-check"])
+        if result.returncode == 0:
+            print("✅ vibe-check service restarted")
+        else:
+            print("❌ Failed to restart systemd service")
         return
 
     cmd_stop(args)
@@ -1488,15 +1541,21 @@ def cmd_status(args):
     """Check vibe-check process status."""
     pid = is_running()
     is_brew_service = is_homebrew_service_running()
+    is_systemd = is_systemd_service_running()
 
     if pid:
         if is_brew_service:
             print(f"✅ vibe-check is running as Homebrew service (PID: {pid})")
             print("   Auto-starts on boot: yes")
+        elif is_systemd:
+            print(f"✅ vibe-check is running as systemd service (PID: {pid})")
+            print("   Auto-starts on login: yes")
         else:
             print(f"✅ vibe-check process is running (PID: {pid})")
             if is_homebrew_service():
                 print("   Auto-starts on boot: no (use 'vibe-check start' to enable)")
+            elif is_systemd_service():
+                print("   Auto-starts on login: no (use 'vibe-check start' to enable)")
         # Show process info if possible
         try:
             result = subprocess.run(
@@ -1935,6 +1994,13 @@ def cmd_auth_login(args):
                             json.dump(config, f, indent=2)
 
                         print(f"   API key saved to {config_path}")
+
+                        # Restart daemon if running so it picks up the new config
+                        pid = is_running()
+                        if pid:
+                            print("\n🔄 Restarting daemon to enable sync...")
+                            cmd_restart(args)
+
                         return
 
                 elif poll_response.status_code == 202:
