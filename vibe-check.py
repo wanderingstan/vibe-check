@@ -326,6 +326,7 @@ class SQLiteManager:
                     (json_extract(event_data, '$.timestamp')) STORED,
                 git_remote_url TEXT,
                 git_commit_hash TEXT,
+                synced_at DATETIME DEFAULT NULL,
                 UNIQUE(file_name, line_number)
             )
         """
@@ -380,6 +381,11 @@ class SQLiteManager:
         self.cursor.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_git_commit_hash ON conversation_events(git_commit_hash)
+        """
+        )
+        self.cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_synced_at ON conversation_events(synced_at)
         """
         )
 
@@ -1657,18 +1663,24 @@ def cmd_status(args):
     # Claude Skills status
     print("\n📚 Claude Skills:")
     skills_dir = Path.home() / ".claude" / "skills"
+    # Skills are installed as directories with SKILL.md inside
     skills_to_check = [
-        "claude-stats.md",
-        "search-conversations.md",
-        "analyze-tools.md",
-        "recent-work.md",
-        "view-stats.md",
-        "get-session-id.md",
+        "claude-stats",
+        "search-conversations",
+        "analyze-tools",
+        "recent-work",
+        "view-stats",
+        "get-session-id",
     ]
 
+    def skill_installed(name):
+        """Check if skill is installed (directory format with SKILL.md)"""
+        skill_path = skills_dir / name / "SKILL.md"
+        return skill_path.exists()
+
     if skills_dir.exists():
-        installed = [s for s in skills_to_check if (skills_dir / s).exists()]
-        missing = [s for s in skills_to_check if not (skills_dir / s).exists()]
+        installed = [s for s in skills_to_check if skill_installed(s)]
+        missing = [s for s in skills_to_check if not skill_installed(s)]
 
         if len(installed) == len(skills_to_check):
             print(f"   ✅ All {len(skills_to_check)} skills installed")

@@ -11,6 +11,9 @@
 #
 # Or run from within the git repo:
 #   ./scripts/install.sh
+#
+# Options:
+#   --skip-auth    Skip authentication step (for testing/CI)
 
 # Set up logging to temp file
 INSTALL_LOG=$(mktemp /tmp/vibe-check-install.XXXXXX.log)
@@ -73,6 +76,14 @@ $(cat "$INSTALL_LOG")
 # Set up error trap
 trap 'handle_error $LINENO' ERR
 set -e
+
+# Parse command line arguments
+SKIP_AUTH=false
+for arg in "$@"; do
+    case $arg in
+        --skip-auth) SKIP_AUTH=true ;;
+    esac
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -371,6 +382,7 @@ WRAPPER
 chmod +x "$VIBE_CHECK_BIN"
 
 # Add to PATH if needed (skip for repo installs - developers manage their own PATH)
+PATH_ADDED_TO_CONFIG=false
 if [ "$RUNNING_FROM_REPO" != true ]; then
     if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
         echo -e "${YELLOW}Adding $INSTALL_DIR to your PATH...${NC}"
@@ -392,20 +404,24 @@ if [ "$RUNNING_FROM_REPO" != true ]; then
                 echo "# Vibe Check" >> "$SHELL_CONFIG"
                 echo "export PATH=\"\$HOME/.vibe-check:\$PATH\"" >> "$SHELL_CONFIG"
                 echo -e "${GREEN}✓ Added to $SHELL_CONFIG${NC}"
-                echo -e "${YELLOW}  Run 'source $SHELL_CONFIG' or restart your terminal${NC}"
+                PATH_ADDED_TO_CONFIG=true
             fi
         fi
 
-        # Also add to current session
+        # Also add to current session (helps if script is sourced)
         export PATH="$INSTALL_DIR:$PATH"
     fi
     echo -e "${GREEN}✓ vibe-check command available${NC}"
+    if [ "$PATH_ADDED_TO_CONFIG" = true ]; then
+        echo -e "${YELLOW}  To use 'vibe-check' command: source $SHELL_CONFIG${NC}"
+        echo -e "${YELLOW}  Or run now with: $VIBE_CHECK_BIN${NC}"
+    fi
 else
     echo -e "${GREEN}✓ Run with: $INSTALL_DIR/vibe-check${NC}"
 fi
 
 # Authentication
-if [ "$NEED_AUTH" = true ]; then
+if [ "$NEED_AUTH" = true ] && [ "$SKIP_AUTH" = false ]; then
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║   Authentication Required             ║${NC}"
@@ -427,6 +443,9 @@ if [ "$NEED_AUTH" = true ]; then
         echo -e "${YELLOW}⚠ Authentication skipped or failed.${NC}"
         echo -e "${YELLOW}  You can authenticate later with: vibe-check auth login${NC}"
     fi
+elif [ "$SKIP_AUTH" = true ]; then
+    echo -e "${YELLOW}⚠ Authentication skipped (--skip-auth)${NC}"
+    echo -e "${YELLOW}  Authenticate later with: vibe-check auth login${NC}"
 fi
 
 # Set up auto-start service (skip for repo installs)
@@ -487,11 +506,48 @@ RestartSec=10
 WantedBy=default.target
 SERVICE
 
-        systemctl --user daemon-reload
-        systemctl --user enable vibe-check 2>/dev/null || true
-        systemctl --user start vibe-check 2>/dev/null || true
-        echo -e "${GREEN}✓ Systemd service installed and started${NC}"
+        # Try systemd user service (may fail for root or without dbus session)
+        SYSTEMD_STARTED=false
+        if systemctl --user daemon-reload 2>/dev/null; then
+            systemctl --user enable vibe-check 2>/dev/null || true
+            if systemctl --user start vibe-check 2>/dev/null; then
+                # Verify it actually started
+                sleep 1
+                if systemctl --user is-active vibe-check &>/dev/null; then
+                    SYSTEMD_STARTED=true
+                    echo -e "${GREEN}✓ Systemd service installed and started${NC}"
+                fi
+            fi
+        fi
+
+        if [ "$SYSTEMD_STARTED" = false ]; then
+            echo -e "${YELLOW}⚠ Systemd user service not available (common for root or SSH sessions)${NC}"
+            echo -e "${BLUE}Starting daemon directly...${NC}"
+            "$VIBE_CHECK_BIN" start 2>/dev/null || true
+            echo -e "${GREEN}✓ Service file installed for future logins${NC}"
+        fi
+    else
+        # No systemd - just start the daemon directly
+        echo -e "${BLUE}Starting daemon...${NC}"
+        "$VIBE_CHECK_BIN" start 2>/dev/null || true
     fi
+else
+    # Repo install - start daemon directly (no auto-start service)
+    echo -e "${BLUE}Starting daemon...${NC}"
+    "$VIBE_CHECK_BIN" start 2>/dev/null || true
+
+    echo ""
+    echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${YELLOW}║   ⚠️  No Auto-Start Service Configured                     ║${NC}"
+    echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${YELLOW}Running from git repo - auto-start service not installed.${NC}"
+    echo -e "${YELLOW}The daemon is running now, but won't restart after reboot.${NC}"
+    echo ""
+    echo -e "${BLUE}Options:${NC}"
+    echo -e "  1. Manual start each session: ${NC}$INSTALL_DIR/vibe-check start"
+    echo -e "  2. Install normally (with auto-start):${NC}"
+    echo -e "     curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash"
+    echo ""
 fi
 
 # Install Claude Code skills
@@ -534,6 +590,9 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║   Installation Complete!              ║${NC}"
 echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
 echo ""
+
+# Give daemon time to process existing files before showing status
+sleep 2
 
 # Show current status
 echo -e "${BLUE}Current status:${NC}"
