@@ -1619,9 +1619,9 @@ def cmd_status(args):
                 size_str = f"{size_bytes / 1024:.1f} KB"
             else:
                 size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-            print(f"   {prefix:8} {resolved_log} ({size_str})")
+            print(f"   {prefix:8}  {resolved_log} ({size_str})")
         else:
-            print(f"   {prefix:8} {log_path} ({description})")
+            print(f"   {prefix:8}  {log_path} ({description})")
 
     # PID file (resolve symlinks)
     pid_path = get_pid_file()
@@ -1629,6 +1629,43 @@ def cmd_status(args):
         print(f"   PID:      {pid_path.resolve()}")
     else:
         print(f"   PID:      {pid_path} (not created)")
+
+    # Local backup status
+    print("\n💾 Local backup:")
+    conversation_dir = Path("~/.claude/projects").expanduser()
+    backup_complete = False
+    if db_path and db_path.exists() and conversation_dir.exists():
+        try:
+            # Count total .jsonl files on disk
+            total_files = len(list(conversation_dir.glob("**/*.jsonl")))
+
+            # Count files tracked in database
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
+            tracked_files = cursor.fetchone()[0]
+            conn.close()
+
+            if total_files == 0:
+                print("   No conversation files found")
+                backup_complete = True
+            elif tracked_files >= total_files:
+                print(f"   ✅ Complete ({tracked_files:,} files)")
+                backup_complete = True
+            else:
+                pct = (tracked_files / total_files * 100) if total_files > 0 else 0
+                remaining = total_files - tracked_files
+                print(
+                    f"   🔄 In progress: {tracked_files:,}/{total_files:,} files ({pct:.0f}%)"
+                )
+                print(f"   Remaining: {remaining:,} files")
+        except sqlite3.Error as e:
+            print(f"   Error reading database: {e}")
+    elif not conversation_dir.exists():
+        print("   ⚠️  Conversation directory not found")
+        print(f"   Expected: {conversation_dir}")
+    else:
+        print("   ⏳ Waiting for database to initialize")
 
     # Remote sync status
     print("\n☁️  Remote sync:")
@@ -1659,6 +1696,86 @@ def cmd_status(args):
     else:
         print("   ❌ Not configured")
         print("   To enable: vibe-check auth login")
+
+    # Sync statistics (part of Remote sync section)
+    if db_path and db_path.exists():
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cursor = conn.cursor()
+
+            # Check if synced_at column exists
+            cursor.execute("PRAGMA table_info(conversation_events)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if "synced_at" in columns:
+                cursor.execute("SELECT COUNT(*) FROM conversation_events")
+                total = cursor.fetchone()[0]
+
+                cursor.execute(
+                    "SELECT COUNT(*) FROM conversation_events WHERE synced_at IS NOT NULL"
+                )
+                synced = cursor.fetchone()[0]
+
+                pending = total - synced
+                pct = (synced / total * 100) if total > 0 else 0
+
+                print(f"   Events:    {synced:,}/{total:,} synced ({pct:.1f}%)")
+
+                if pending > 0 and api_enabled:
+                    # Estimate time to sync at 10 req/sec
+                    eta_seconds = pending / 10
+                    if eta_seconds < 60:
+                        eta_str = f"{eta_seconds:.0f} sec"
+                    elif eta_seconds < 3600:
+                        eta_str = f"{eta_seconds / 60:.0f} min"
+                    else:
+                        eta_str = f"{eta_seconds / 3600:.1f} hr"
+                    print(f"   ETA:       ~{eta_str} (at 10/sec)")
+
+                # Check if sync worker is actively syncing (recent synced_at timestamps)
+                cursor.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM conversation_events
+                    WHERE synced_at > datetime('now', '-2 minutes')
+                """
+                )
+                recent_count = cursor.fetchone()[0]
+
+                if not api_enabled:
+                    print(f"   Worker:    ⚪ N/A (sync disabled)")
+                elif recent_count > 0 and pending > 0:
+                    print(
+                        f"   Worker:    🟢 Active ({recent_count} synced in last 2 min)"
+                    )
+                elif not backup_complete and pending > 0 and pid:
+                    print(f"   Worker:    ⏳ Waiting for local backup")
+                elif pending > 0 and pid:
+                    print(f"   Worker:    🟡 Idle (waiting or backed off)")
+                elif pending == 0:
+                    print(f"   Worker:    ✅ Complete")
+                else:
+                    print(f"   Worker:    ⚪ Not running (daemon stopped)")
+
+                # Show last sync time if any synced
+                if synced > 0:
+                    cursor.execute(
+                        "SELECT MAX(synced_at) FROM conversation_events WHERE synced_at IS NOT NULL"
+                    )
+                    last_sync_time = cursor.fetchone()[0]
+                    if last_sync_time:
+                        print(f"   Last sync: {last_sync_time}")
+
+            else:
+                cursor.execute("SELECT COUNT(*) FROM conversation_events")
+                total = cursor.fetchone()[0]
+                print(
+                    f"   Events:    {total:,} (sync tracking not enabled - restart daemon)"
+                )
+
+            conn.close()
+        except sqlite3.Error as e:
+            print(f"   Error reading database: {e}")
 
     # Claude Skills status
     print("\n📚 Claude Skills:")
@@ -1695,86 +1812,6 @@ def cmd_status(args):
     else:
         print("   ❌ Skills directory not found")
         print("   To install: run 'vibe-check start' and follow prompts")
-
-    # Sync statistics (if database exists)
-    if db_path and db_path.exists():
-        print("\n📊 Sync statistics:")
-        try:
-            conn = sqlite3.connect(str(db_path))
-            cursor = conn.cursor()
-
-            # Check if synced_at column exists
-            cursor.execute("PRAGMA table_info(conversation_events)")
-            columns = [row[1] for row in cursor.fetchall()]
-
-            if "synced_at" in columns:
-                cursor.execute("SELECT COUNT(*) FROM conversation_events")
-                total = cursor.fetchone()[0]
-
-                cursor.execute(
-                    "SELECT COUNT(*) FROM conversation_events WHERE synced_at IS NOT NULL"
-                )
-                synced = cursor.fetchone()[0]
-
-                pending = total - synced
-                pct = (synced / total * 100) if total > 0 else 0
-
-                print(f"   Total events:  {total:,}")
-                print(f"   Synced:        {synced:,} ({pct:.1f}%)")
-                print(f"   Pending:       {pending:,}")
-
-                if pending > 0 and api_enabled:
-                    # Estimate time to sync at 10 req/sec
-                    eta_seconds = pending / 10
-                    if eta_seconds < 60:
-                        eta_str = f"{eta_seconds:.0f} sec"
-                    elif eta_seconds < 3600:
-                        eta_str = f"{eta_seconds / 60:.0f} min"
-                    else:
-                        eta_str = f"{eta_seconds / 3600:.1f} hr"
-                    print(f"   ETA to sync:   ~{eta_str} (at 10/sec)")
-
-                # Check if sync worker is actively syncing (recent synced_at timestamps)
-                cursor.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM conversation_events
-                    WHERE synced_at > datetime('now', '-2 minutes')
-                """
-                )
-                recent_count = cursor.fetchone()[0]
-
-                if not api_enabled:
-                    print(f"   Sync worker:   ⚪ N/A (API sync disabled)")
-                elif recent_count > 0 and pending > 0:
-                    print(
-                        f"   Sync worker:   🟢 Active ({recent_count} synced in last 2 min)"
-                    )
-                elif pending > 0 and pid:
-                    print(f"   Sync worker:   🟡 Idle (waiting or backed off)")
-                elif pending == 0:
-                    print(f"   Sync worker:   ✅ Complete (all synced)")
-                else:
-                    print(f"   Sync worker:   ⚪ Not running (daemon stopped)")
-
-                # Show last sync time if any synced
-                if synced > 0:
-                    cursor.execute(
-                        "SELECT MAX(synced_at) FROM conversation_events WHERE synced_at IS NOT NULL"
-                    )
-                    last_sync_time = cursor.fetchone()[0]
-                    if last_sync_time:
-                        print(f"   Last synced:   {last_sync_time}")
-
-            else:
-                cursor.execute("SELECT COUNT(*) FROM conversation_events")
-                total = cursor.fetchone()[0]
-                print(f"   Total events:  {total:,}")
-                print("   (sync tracking not yet enabled - restart daemon to migrate)")
-
-            conn.close()
-        except sqlite3.Error as e:
-            print(f"   Error reading database: {e}")
 
 
 def cmd_uninstall(args):
@@ -1827,7 +1864,9 @@ def cmd_uninstall(args):
     if pid:
         print("Stopping vibe-check process...")
         if is_brew and is_homebrew_service_running():
-            subprocess.run(["brew", "services", "stop", "vibe-check"], capture_output=True)
+            subprocess.run(
+                ["brew", "services", "stop", "vibe-check"], capture_output=True
+            )
         else:
             try:
                 os.kill(pid, signal.SIGTERM)
