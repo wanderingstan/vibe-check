@@ -1567,6 +1567,7 @@ def cmd_status(args):
 
     # Remote sync status
     print("\n☁️  Remote sync:")
+    api_enabled = False  # Track for use in sync statistics section
     if config_path.exists():
         try:
             with open(config_path, "r") as f:
@@ -1651,7 +1652,7 @@ def cmd_status(args):
                 print(f"   Synced:        {synced:,} ({pct:.1f}%)")
                 print(f"   Pending:       {pending:,}")
 
-                if pending > 0:
+                if pending > 0 and api_enabled:
                     # Estimate time to sync at 10 req/sec
                     eta_seconds = pending / 10
                     if eta_seconds < 60:
@@ -1672,7 +1673,9 @@ def cmd_status(args):
                 )
                 recent_count = cursor.fetchone()[0]
 
-                if recent_count > 0 and pending > 0:
+                if not api_enabled:
+                    print(f"   Sync worker:   ⚪ N/A (API sync disabled)")
+                elif recent_count > 0 and pending > 0:
                     print(
                         f"   Sync worker:   🟢 Active ({recent_count} synced in last 2 min)"
                     )
