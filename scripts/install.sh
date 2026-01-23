@@ -584,6 +584,16 @@ else
     echo -e "${YELLOW}⚠ Skills directory not found, skipping skills installation${NC}"
 fi
 
+# Install MCP plugin for Claude Code integration
+PLUGIN_SCRIPT="$INSTALL_DIR/scripts/install-plugin.sh"
+if [ -f "$PLUGIN_SCRIPT" ]; then
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}Installing MCP Plugin...${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    bash "$PLUGIN_SCRIPT"
+fi
+
 # Installation complete
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
