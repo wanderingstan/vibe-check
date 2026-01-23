@@ -977,21 +977,91 @@ class ConversationMonitor(FileSystemEventHandler):
         logger.info("Finished processing existing files")
 
 
+def is_mcp_plugin_installed() -> bool:
+    """Check if vibe-check MCP server is registered in ~/.claude.json."""
+    claude_config = Path.home() / ".claude.json"
+    if not claude_config.exists():
+        return False
+
+    try:
+        with open(claude_config, "r") as f:
+            config = json.load(f)
+        mcp_servers = config.get("mcpServers", {})
+        return "vibe-check" in mcp_servers
+    except (json.JSONDecodeError, IOError):
+        return False
+
+
+def check_mcp_plugin():
+    """Check if MCP plugin is installed and auto-install if not.
+
+    The MCP plugin provides structured tool interfaces for Claude Code,
+    enabling commands like /stats, /search, /share etc.
+    """
+    if is_mcp_plugin_installed():
+        return  # Already installed
+
+    # Find the plugin installer
+    # First check Homebrew location
+    homebrew_installer = Path("/opt/homebrew/share/vibe-check/scripts/install-plugin.sh")
+    if homebrew_installer.exists():
+        installer_path = homebrew_installer
+        script_dir = homebrew_installer.parent.parent
+    else:
+        # Check if we're in the vibe-check directory
+        script_dir = Path(__file__).parent
+        installer_path = script_dir / "scripts" / "install-plugin.sh"
+
+    if not installer_path.exists():
+        # Installer not available
+        logger.debug(f"Plugin installer not found at {installer_path}")
+        return
+
+    # Auto-install the MCP plugin
+    print("\n" + "=" * 70)
+    print("🔌 Installing Claude Code MCP Plugin...")
+    print("=" * 70)
+    print("\nThis enables structured commands like /stats, /search, /share")
+    print("and natural language queries about your conversation history.\n")
+
+    try:
+        result = subprocess.run(
+            ["bash", str(installer_path)],
+            cwd=str(script_dir),
+            capture_output=False,
+        )
+        if result.returncode == 0:
+            print("\n✅ MCP plugin installed successfully!")
+            print("   Restart Claude Code to use the new commands.")
+        else:
+            print("\n⚠️  Plugin installation had issues.")
+            print(f"   You can install manually: {installer_path}")
+    except Exception as e:
+        logger.warning(f"Could not install MCP plugin: {e}")
+        print(f"\n⚠️  Could not install MCP plugin: {e}")
+        print(f"   You can install manually: {installer_path}")
+
+    print("=" * 70)
+    print()
+
+
 def check_claude_skills():
     """Check if Claude Code skills are installed and prompt to install if not."""
     skills_dir = Path.home() / ".claude" / "skills"
+    # New directory-based skill names (vibe-check-* prefix)
     skills_to_check = [
-        "claude-stats.md",
-        "search-conversations.md",
-        "analyze-tools.md",
-        "recent-work.md",
-        "view-stats.md",
+        "vibe-check-stats",
+        "vibe-check-search",
+        "vibe-check-analyze-tools",
+        "vibe-check-recent",
+        "vibe-check-view-stats",
     ]
 
-    # Check if any skills are missing
+    # Check if any skills are missing (check for SKILL.md inside directory)
     missing_skills = []
     for skill in skills_to_check:
-        if not (skills_dir / skill).exists():
+        skill_file = skills_dir / skill / "SKILL.md"
+        if not skill_file.exists():
             missing_skills.append(skill)
 
     # If all skills are installed, nothing to do
@@ -1001,18 +1071,20 @@ def check_claude_skills():
     # First, try Homebrew location (auto-install silently)
     homebrew_skills_dir = Path("/opt/homebrew/share/vibe-check/skills")
     if homebrew_skills_dir.exists():
+        import shutil
+
         skills_dir.mkdir(parents=True, exist_ok=True)
         installed_count = 0
-        for skill_file in homebrew_skills_dir.glob("*.md"):
-            dest = skills_dir / skill_file.name
-            if not dest.exists():
-                try:
-                    import shutil
-
-                    shutil.copy(skill_file, dest)
-                    installed_count += 1
-                except Exception as e:
-                    logger.warning(f"Could not install skill {skill_file.name}: {e}")
+        # Copy skill directories (new structure: vibe-check-*/SKILL.md)
+        for skill_src_dir in homebrew_skills_dir.glob("vibe-check-*"):
+            if skill_src_dir.is_dir():
+                dest = skills_dir / skill_src_dir.name
+                if not dest.exists():
+                    try:
+                        shutil.copytree(skill_src_dir, dest)
+                        installed_count += 1
+                    except Exception as e:
+                        logger.warning(f"Could not install skill {skill_src_dir.name}: {e}")
         if installed_count > 0:
             logger.info(
                 f"Installed {installed_count} Claude Code skills to {skills_dir}"
@@ -1357,6 +1429,9 @@ def cmd_start(args):
                 print()  # blank line after auth
         except (EOFError, KeyboardInterrupt):
             print("\nSkipping authentication. Run 'vibe-check auth login' later.")
+
+    # Check and auto-install MCP plugin if not present
+    check_mcp_plugin()
 
     # If homebrew install and not forcing foreground, use brew services
     if is_homebrew_service() and not getattr(args, "foreground", False):
@@ -1777,17 +1852,27 @@ def cmd_status(args):
         except sqlite3.Error as e:
             print(f"   Error reading database: {e}")
 
-    # Claude Skills status
-    print("\n📚 Claude Skills:")
+    # Claude Integration status (MCP + Skills)
+    print("\n🔌 Claude Integration:")
+
+    # MCP Plugin status
+    mcp_installed = is_mcp_plugin_installed()
+    if mcp_installed:
+        print("   MCP:    ✅ Installed")
+    else:
+        print("   MCP:    ❌ Not installed")
+
+    # Skills status
     skills_dir = Path.home() / ".claude" / "skills"
-    # Skills are installed as directories with SKILL.md inside
+    # Skills are installed as directories with SKILL.md inside (vibe-check-* prefix)
     skills_to_check = [
-        "claude-stats",
-        "search-conversations",
-        "analyze-tools",
-        "recent-work",
-        "view-stats",
-        "get-session-id",
+        "vibe-check-stats",
+        "vibe-check-search",
+        "vibe-check-analyze-tools",
+        "vibe-check-recent",
+        "vibe-check-view-stats",
+        "vibe-check-session-id",
+        "vibe-check-share",
     ]
 
     def skill_installed(name):
@@ -1800,41 +1885,44 @@ def cmd_status(args):
         missing = [s for s in skills_to_check if not skill_installed(s)]
 
         if len(installed) == len(skills_to_check):
-            print(f"   ✅ All {len(skills_to_check)} skills installed")
-            print(f"   Location: {skills_dir}")
+            print(f"   Skills: ✅ All {len(skills_to_check)} installed")
         elif installed:
-            print(f"   ⚠️  {len(installed)}/{len(skills_to_check)} skills installed")
-            print(f"   Location: {skills_dir}")
-            print(f"   Missing: {', '.join(missing)}")
+            print(f"   Skills: ⚠️  {len(installed)}/{len(skills_to_check)} installed")
         else:
-            print("   ❌ No skills installed")
-            print("   To install: run 'vibe-check start' and follow prompts")
+            print("   Skills: ❌ Not installed")
     else:
-        print("   ❌ Skills directory not found")
-        print("   To install: run 'vibe-check start' and follow prompts")
+        print("   Skills: ❌ Not installed")
+
+    # Show install hint if either is missing
+    if not mcp_installed or (skills_dir.exists() and len([s for s in skills_to_check if skill_installed(s)]) < len(skills_to_check)):
+        print("   To install: run 'vibe-check start'")
 
 
 def cmd_uninstall(args):
-    """Uninstall vibe-check data and Claude Code skills."""
+    """Uninstall vibe-check data, MCP plugin, hooks, and Claude Code skills."""
     import shutil
 
     install_dir = Path.home() / ".vibe-check"
     skills_dir = Path.home() / ".claude" / "skills"
-    # Skills to remove (directory names, not filenames)
+    claude_config = Path.home() / ".claude.json"
+    claude_settings = Path.home() / ".claude" / "settings.json"
+    # Skills to remove (directory names with vibe-check-* prefix)
     skills_to_remove = [
-        "claude-stats",
-        "search-conversations",
-        "analyze-tools",
-        "recent-work",
-        "view-stats",
-        "get-session-id",
-        "share-session",
+        "vibe-check-stats",
+        "vibe-check-search",
+        "vibe-check-analyze-tools",
+        "vibe-check-recent",
+        "vibe-check-view-stats",
+        "vibe-check-session-id",
+        "vibe-check-share",
     ]
 
     # Show what will be removed
     print("\n🧜 Vibe Check Uninstaller")
     print("=" * 50)
     print("\nThis will remove:")
+    print(f"  - MCP plugin from ~/.claude.json")
+    print(f"  - Session tracking hook from ~/.claude/settings.json")
     print(f"  - Claude Code skills from {skills_dir}")
     print(f"  - Data directory: {install_dir}")
     print("    (config, database, logs, PID file)")
@@ -1874,6 +1962,53 @@ def cmd_uninstall(args):
             except ProcessLookupError:
                 pass
         print("✓ Process stopped")
+
+    # Remove MCP plugin from ~/.claude.json
+    if claude_config.exists():
+        try:
+            with open(claude_config, "r") as f:
+                config = json.load(f)
+            if "mcpServers" in config and "vibe-check" in config["mcpServers"]:
+                del config["mcpServers"]["vibe-check"]
+                with open(claude_config, "w") as f:
+                    json.dump(config, f, indent=2)
+                print("✓ Removed MCP plugin from ~/.claude.json")
+            else:
+                print("✓ MCP plugin not found in ~/.claude.json")
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"⚠️  Could not update ~/.claude.json: {e}")
+    else:
+        print("✓ No ~/.claude.json found")
+
+    # Remove session tracking hook from ~/.claude/settings.json
+    if claude_settings.exists():
+        try:
+            with open(claude_settings, "r") as f:
+                settings = json.load(f)
+            hooks = settings.get("hooks", {}).get("UserPromptSubmit", [])
+            # Filter out vibe-check hooks
+            original_count = len(hooks)
+            hooks = [h for h in hooks if not any(
+                "session-tracker" in cmd.get("command", "") or "vibe-check" in cmd.get("command", "")
+                for cmd in h.get("hooks", [])
+            )]
+            if len(hooks) < original_count:
+                if hooks:
+                    settings["hooks"]["UserPromptSubmit"] = hooks
+                else:
+                    # Remove the empty UserPromptSubmit key
+                    del settings["hooks"]["UserPromptSubmit"]
+                    if not settings["hooks"]:
+                        del settings["hooks"]
+                with open(claude_settings, "w") as f:
+                    json.dump(settings, f, indent=2)
+                print("✓ Removed session tracking hook from settings.json")
+            else:
+                print("✓ Session tracking hook not found in settings.json")
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            print(f"⚠️  Could not update settings.json: {e}")
+    else:
+        print("✓ No ~/.claude/settings.json found")
 
     # Remove skills
     if skills_dir.exists():
