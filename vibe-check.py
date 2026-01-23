@@ -413,34 +413,13 @@ class SQLiteManager:
         """
         )
 
-        # Create view for events with messages (filters out null/empty messages)
-        self.cursor.execute(
-            """
-            CREATE VIEW IF NOT EXISTS conversation_events_with_messages AS
-            SELECT
-                event_timestamp,
-                event_type,
-                event_message,
-                event_uuid,
-                event_session_id,
-                event_git_branch,
-                git_commit_hash,
-                file_name,
-                line_number,
-                id
-            FROM conversation_events
-            WHERE event_message IS NOT NULL
-              AND event_message != 'null'
-              AND event_message != ''
-        """
-        )
-
         self.connection.commit()
 
     def _migrate_schema(self):
         """Run schema migrations for existing databases."""
         # Check if synced_at column exists
-        self.cursor.execute("PRAGMA table_info(conversation_events)")
+        # Use table_xinfo to include generated columns (table_info excludes them)
+        self.cursor.execute("PRAGMA table_xinfo(conversation_events)")
         columns = [row[1] for row in self.cursor.fetchall()]
 
         if "synced_at" not in columns:
@@ -475,6 +454,26 @@ class SQLiteManager:
         SQLite doesn't support ALTER TABLE ADD COLUMN for STORED generated columns,
         so we must recreate the table with the new schema.
         """
+        # Get row count for progress logging
+        self.cursor.execute("SELECT COUNT(*) FROM conversation_events")
+        row_count = self.cursor.fetchone()[0]
+        logger.info(f"Migration: processing {row_count:,} rows...")
+
+        # Save dependent view definitions before dropping the table
+        self.cursor.execute(
+            """
+            SELECT name, sql FROM sqlite_master
+            WHERE type='view' AND sql LIKE '%conversation_events%'
+        """
+        )
+        views = self.cursor.fetchall()
+        if views:
+            logger.info(f"Migration: preserving {len(views)} dependent view(s)")
+
+        # Drop dependent views first
+        for view_name, _ in views:
+            self.cursor.execute(f"DROP VIEW IF EXISTS {view_name}")
+
         # Create new table with updated schema
         self.cursor.execute(
             """
@@ -582,7 +581,14 @@ class SQLiteManager:
             "CREATE INDEX IF NOT EXISTS idx_event_model ON conversation_events(event_model)"
         )
 
+        # Recreate dependent views
+        for view_name, view_sql in views:
+            if view_sql:
+                logger.info(f"Migration: recreating view '{view_name}'")
+                self.cursor.execute(view_sql)
+
         self.connection.commit()
+        logger.info(f"Migration: complete ({row_count:,} rows migrated)")
 
     def insert_event(
         self,
