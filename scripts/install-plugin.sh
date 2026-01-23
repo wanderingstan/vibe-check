@@ -122,6 +122,47 @@ else
     echo "   ⚠️  Skills directory not found. Skipping."
 fi
 
+# Step 4: Register UserPromptSubmit hook
+HOOK_SCRIPT="$VIBE_CHECK_DIR/hooks/session-tracker.py"
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+
+echo ""
+echo "🪝 Installing session tracking hook..."
+
+if [ -f "$HOOK_SCRIPT" ]; then
+    # Ensure settings.json exists
+    if [ ! -f "$CLAUDE_SETTINGS" ]; then
+        mkdir -p "$HOME/.claude"
+        echo '{}' > "$CLAUDE_SETTINGS"
+    fi
+
+    if command -v jq &> /dev/null; then
+        TMP_FILE=$(mktemp)
+
+        # Add or update the UserPromptSubmit hook
+        jq --arg hook "$HOOK_SCRIPT" \
+           '.hooks.UserPromptSubmit = [{"hooks": [{"type": "command", "command": $hook}]}]' \
+           "$CLAUDE_SETTINGS" > "$TMP_FILE"
+
+        mv "$TMP_FILE" "$CLAUDE_SETTINGS"
+        echo "   ✓ Registered session tracking hook"
+    else
+        echo "   ⚠️  jq not installed. Add this to ~/.claude/settings.json:"
+        echo ""
+        echo '   "hooks": {'
+        echo '     "UserPromptSubmit": [{'
+        echo '       "hooks": [{'
+        echo '         "type": "command",'
+        echo "         \"command\": \"$HOOK_SCRIPT\""
+        echo '       }]'
+        echo '     }]'
+        echo '   }'
+        echo ""
+    fi
+else
+    echo "   ⚠️  Hook script not found. Skipping."
+fi
+
 # Done!
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
@@ -138,6 +179,10 @@ echo "  • vibe_recent    - Recent sessions"
 echo "  • vibe_session   - Session information"
 echo "  • vibe_share     - Create shareable links"
 echo ""
+echo "Session tracking:"
+echo "  • Hook automatically injects session context into every prompt"
+echo "  • No need for VIBE_SESSION_MARKER - session ID is provided directly"
+echo ""
 echo "To use: Restart Claude Code or start a new session."
 echo ""
-echo "Test with: \"claude stats\" or use tools directly."
+echo "Test with: \"claude stats\" or use MCP tools directly."
