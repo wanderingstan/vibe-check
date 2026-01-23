@@ -1,0 +1,22 @@
+{
+  "name": "vibe-check",
+  "version": "1.0.0",
+  "description": "Claude Code conversation analytics and history search",
+  "author": {
+    "name": "Stan James",
+    "url": "https://vibecheck.wanderingstan.com"
+  },
+  "repository": "https://github.com/wanderingstan/vibe-check",
+  "license": "MIT",
+  "mcpServers": {
+    "vibe-check": {
+      "type": "stdio",
+      "command": "__VIBE_CHECK_VENV__/bin/python",
+      "args": ["__VIBE_CHECK_DIR__/mcp-server/server.py"],
+      "env": {
+        "VIBE_CHECK_DB": "__HOME__/.vibe-check/vibe_check.db",
+        "VIBE_CHECK_CONFIG": "__HOME__/.vibe-check/config.json"
+      }
+    }
+  }
+}
