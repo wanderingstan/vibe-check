@@ -72,8 +72,8 @@ class VibeCheck < Formula
     # Make vibe-check.py executable
     chmod 0755, libexec/"vibe-check.py"
 
-    # Install skills to share directory
-    (share/"vibe-check/skills").install Dir["claude-skills/*.md"]
+    # Install skills to share directory (each skill is a directory with SKILL.md)
+    (share/"vibe-check/skills").install Dir["skills/vibe-check-*"]
 
     # Create executable wrapper for monitor that uses venv python
     (bin/"vibe-check").write <<~EOS
@@ -108,7 +108,7 @@ class VibeCheck < Formula
     system bin/"vibe-check", "--help"
 
     # Verify skills installed to share directory
-    assert_predicate share/"vibe-check/skills/claude-stats.md", :exist?
+    assert_predicate share/"vibe-check/skills/vibe-check-stats/SKILL.md", :exist?
 
     # Test Python imports work
     system libexec/"bin/python3", "-c", "import watchdog, requests"
