@@ -855,6 +855,9 @@ class ConversationMonitor(FileSystemEventHandler):
             # Process only new lines
             new_lines = lines[last_line:]
             if not new_lines:
+                # Still track empty/fully-processed files so they count as "complete"
+                if last_line == 0 and len(lines) == 0:
+                    self.state_manager.set_last_line(filename, 0)
                 return
 
             logger.info(f"Processing {len(new_lines)} new line(s) from {filename}")
@@ -869,6 +872,8 @@ class ConversationMonitor(FileSystemEventHandler):
 
                 if not line:
                     skipped_count += 1
+                    # Still update state to track progress through empty lines
+                    self.state_manager.set_last_line(filename, line_number)
                     continue
 
                 try:
