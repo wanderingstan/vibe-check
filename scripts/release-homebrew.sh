@@ -66,6 +66,16 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     exit 0
 fi
 
+# Update VERSION in vibe-check.py (strip leading 'v' for the Python constant)
+VERSION_NUMBER="${NEW_VERSION#v}"
+echo -e "\n${GREEN}Updating VERSION in vibe-check.py...${NC}"
+sed -i '' "s/^VERSION = \".*\"/VERSION = \"${VERSION_NUMBER}\"/" "$PROJECT_DIR/vibe-check.py"
+echo "Set VERSION = \"${VERSION_NUMBER}\""
+
+# Commit version update
+git add vibe-check.py
+git commit -m "Bump version to ${NEW_VERSION}" || true
+
 # Create and push tag
 echo -e "\n${GREEN}Creating tag $NEW_VERSION...${NC}"
 git tag "$NEW_VERSION"

@@ -34,6 +34,9 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # Create module-level logger
 logger = logging.getLogger("vibe-check")
 
+# Version
+VERSION = "1.1.0"
+
 # Default production API URL
 DEFAULT_API_URL = "https://vibecheck.wanderingstan.com/api"
 
@@ -1620,6 +1623,9 @@ def get_sqlite_db_path() -> Optional[Path]:
 
 def cmd_status(args):
     """Check vibe-check process status."""
+    print(f"🧜 vibe-check v{VERSION}")
+    print("")
+
     pid = is_running()
     is_brew_service = is_homebrew_service_running()
     is_systemd = is_systemd_service_running()
@@ -2383,6 +2389,14 @@ Examples:
   vibe-check logs               # View logs
   vibe-check --skip-backlog     # Run foreground, skip existing conversations
         """,
+    )
+
+    # Version flag
+    parser.add_argument(
+        "--version",
+        "-V",
+        action="version",
+        version=f"vibe-check {VERSION}",
     )
 
     # Global arguments (work with any command)
