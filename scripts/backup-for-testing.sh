@@ -161,24 +161,23 @@ fi
 
 # Backup vibe-check related skills
 if [ -d "$SKILLS_DIR" ]; then
-    # Copy vibe-check related skill files (check content for vibe-check references)
+    # Backup skill directories with vibe-check prefix (new structure)
+    for skill_dir in "$SKILLS_DIR"/vibe-check-*/; do
+        if [ -d "$skill_dir" ]; then
+            skill_name=$(basename "$skill_dir")
+            cp -r "$skill_dir" "$BACKUP_DIR/skills/"
+            print_status "Backed up skill: $skill_name"
+            rm -rf "$skill_dir"
+        fi
+    done
+
+    # Also backup legacy flat skill files (old structure)
     for skill in "$SKILLS_DIR"/*.md; do
         if [ -f "$skill" ] && grep -qi "vibe-check\|vibe_check" "$skill" 2>/dev/null; then
             cp "$skill" "$BACKUP_DIR/skills/"
             skill_name=$(basename "$skill")
             print_status "Backed up skill: $skill_name"
             rm -f "$skill"
-        fi
-    done
-
-    # Also check for skills installed by our installer (known filenames)
-    for known_skill in "vibe.md" "vibe-check.md"; do
-        if [ -f "$SKILLS_DIR/$known_skill" ]; then
-            if [ ! -f "$BACKUP_DIR/skills/$known_skill" ]; then
-                cp "$SKILLS_DIR/$known_skill" "$BACKUP_DIR/skills/"
-                print_status "Backed up skill: $known_skill"
-            fi
-            rm -f "$SKILLS_DIR/$known_skill"
         fi
     done
 else

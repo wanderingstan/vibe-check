@@ -217,10 +217,21 @@ else
     print_warning "No LaunchAgent to restore"
 fi
 
-# Restore skills
+# Restore skills (handles both directory and flat file structure)
 if [ -d "$BACKUP_DIR/skills" ] && [ "$(ls -A "$BACKUP_DIR/skills" 2>/dev/null)" ]; then
     mkdir -p "$SKILLS_DIR"
-    cp "$BACKUP_DIR/skills/"* "$SKILLS_DIR/" 2>/dev/null || true
+    # Copy skill directories (new structure)
+    for item in "$BACKUP_DIR/skills/"*/; do
+        if [ -d "$item" ]; then
+            cp -r "$item" "$SKILLS_DIR/"
+        fi
+    done
+    # Copy flat files (legacy structure)
+    for item in "$BACKUP_DIR/skills/"*.md; do
+        if [ -f "$item" ]; then
+            cp "$item" "$SKILLS_DIR/"
+        fi
+    done
     print_status "Restored skills"
 else
     print_warning "No skills to restore"
