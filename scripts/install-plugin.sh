@@ -92,6 +92,9 @@ else
 fi
 
 # Step 3: Ask about skills installation
+SKILLS_DIR="$VIBE_CHECK_DIR/skills"
+CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
+
 echo ""
 echo "📚 Skills Installation"
 echo "   vibe-check includes Claude Code skills for natural language queries."
@@ -102,10 +105,29 @@ read -p "   Install skills to ~/.claude/skills/? [Y/n] " -n 1 -r
 echo ""
 
 if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    if [ -f "$VIBE_CHECK_DIR/claude-skills/install-skills.sh" ]; then
-        bash "$VIBE_CHECK_DIR/claude-skills/install-skills.sh"
+    if [ -d "$SKILLS_DIR" ]; then
+        mkdir -p "$CLAUDE_SKILLS_DIR"
+
+        # Install each skill directory
+        for skill_dir in "$SKILLS_DIR"/*/; do
+            if [ -d "$skill_dir" ]; then
+                skill_name=$(basename "$skill_dir")
+                target_dir="$CLAUDE_SKILLS_DIR/$skill_name"
+
+                if [ -d "$target_dir" ]; then
+                    echo "   Updating: $skill_name"
+                    rm -rf "$target_dir"
+                else
+                    echo "   Installing: $skill_name"
+                fi
+
+                cp -r "$skill_dir" "$target_dir"
+            fi
+        done
+
+        echo "   ✓ Skills installed to $CLAUDE_SKILLS_DIR"
     else
-        echo "   ⚠️  Skills installer not found. Skipping."
+        echo "   ⚠️  Skills directory not found at $SKILLS_DIR. Skipping."
     fi
 else
     echo "   Skipped skills installation."

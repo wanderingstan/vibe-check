@@ -552,7 +552,7 @@ fi
 
 # Install Claude Code skills
 echo -e "${BLUE}Installing Claude Code skills...${NC}"
-SKILLS_SRC="$INSTALL_DIR/claude-skills"
+SKILLS_SRC="$INSTALL_DIR/skills"
 SKILLS_DEST="$HOME/.claude/skills"
 
 if [ -d "$SKILLS_SRC" ]; then

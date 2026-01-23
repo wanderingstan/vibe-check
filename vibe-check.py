@@ -1021,7 +1021,7 @@ def check_claude_skills():
 
     # Check if we're in the vibe-check directory with the installer
     script_dir = Path(__file__).parent
-    installer_path = script_dir / "claude-skills" / "install-skills.sh"
+    installer_path = script_dir / "scripts" / "install-plugin.sh"
 
     if not installer_path.exists():
         # Installer not available (maybe installed via package manager)

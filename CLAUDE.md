@@ -22,24 +22,34 @@ A Python monitoring client that watches Claude Code conversation files and store
 ├── secret_detector.py         # Secret detection/redaction
 ├── requirements.txt           # Python dependencies
 ├── config.json.example        # Config template
+├── PLUGIN-CLAUDE.md           # Plugin instructions for Claude
+│
+├── .claude-plugin/
+│   └── plugin.json            # Plugin manifest
 │
 ├── scripts/
-│   ├── install.sh             # Main installer
+│   ├── install.sh             # Main installer (daemon)
+│   ├── install-plugin.sh      # Plugin installer (MCP + skills)
 │   ├── release-homebrew.sh    # Homebrew release
 │   └── query-helper.sh        # Safe DB querying
 │
-├── claude-skills/             # Claude Code skills
-│   ├── claude-stats.md        # Usage statistics
-│   ├── search-conversations.md # Search history
-│   ├── analyze-tools.md       # Tool usage analysis
-│   ├── recent-work.md         # Recent sessions
-│   └── get-session-id.md      # Session lookup
+├── skills/                    # Claude Code skills
+│   ├── claude-stats/          # Usage statistics
+│   ├── search-conversations/  # Search history
+│   ├── analyze-tools/         # Tool usage analysis
+│   ├── recent-work/           # Recent sessions
+│   ├── get-session-id/        # Session lookup
+│   ├── share-session/         # Share session links
+│   └── view-stats/            # Open web stats page
 │
-├── data/                      # Runtime data
-│   ├── config.json            # Configuration
-│   └── vibe_check.db          # SQLite database
+├── mcp-server/                # MCP server
+│   ├── server.py              # FastMCP server
+│   ├── database.py            # SQLite handler
+│   └── requirements.txt       # MCP dependencies
 │
-└── mcp-server/                # MCP server (separate)
+└── data/                      # Runtime data
+    ├── config.json            # Configuration
+    └── vibe_check.db          # SQLite database
 ```
 
 ## Database Schema

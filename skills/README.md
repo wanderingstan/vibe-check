@@ -13,18 +13,18 @@ Claude Code skills are markdown files placed in `~/.claude/skills/` that provide
 From the vibe-check directory, run:
 
 ```bash
-./claude-skills/install-skills.sh
+./scripts/install-plugin.sh
 ```
 
-This will copy all 7 skills to `~/.claude/skills/`.
+This will install the MCP server and optionally copy all 7 skills to `~/.claude/skills/`.
 
 ### Manual Install
 
-If you prefer to install manually:
+If you prefer to install skills manually:
 
 ```bash
 mkdir -p ~/.claude/skills
-cp claude-skills/*.md ~/.claude/skills/
+cp -r skills/*/ ~/.claude/skills/
 ```
 
 ## Available Skills
@@ -205,7 +205,7 @@ To improve these skills:
 
 1. Edit the skill files in this directory
 2. Test with Claude Code
-3. Run `./install-skills.sh` to update your local copy
+3. Run `./scripts/install-plugin.sh` to update your local copy
 4. Commit and share improvements!
 
 ## How Claude Discovers Skills
