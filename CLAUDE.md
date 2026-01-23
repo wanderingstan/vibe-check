@@ -59,7 +59,10 @@ A Python monitoring client that watches Claude Code conversation files and store
 id, file_name, line_number, event_data (JSON), user_name, inserted_at
 -- Generated columns from JSON:
 event_type, event_message, event_session_id, event_git_branch, event_uuid, event_timestamp
-git_remote_url, git_commit_hash
+event_model, event_input_tokens, event_cache_creation_input_tokens,
+event_cache_read_input_tokens, event_output_tokens
+-- Regular columns:
+git_remote_url, git_commit_hash, synced_at
 ```
 
 **conversation_file_state** - Incremental processing state:

@@ -327,6 +327,16 @@ class SQLiteManager:
                     (json_extract(event_data, '$.uuid')) STORED,
                 event_timestamp TEXT GENERATED ALWAYS AS
                     (json_extract(event_data, '$.timestamp')) STORED,
+                event_model TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.model')) STORED,
+                event_input_tokens INTEGER GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.usage.input_tokens')) STORED,
+                event_cache_creation_input_tokens INTEGER GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.usage.cache_creation_input_tokens')) STORED,
+                event_cache_read_input_tokens INTEGER GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.usage.cache_read_input_tokens')) STORED,
+                event_output_tokens INTEGER GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.usage.output_tokens')) STORED,
                 git_remote_url TEXT,
                 git_commit_hash TEXT,
                 synced_at DATETIME DEFAULT NULL,
@@ -450,6 +460,129 @@ class SQLiteManager:
             )
             self.connection.commit()
             logger.info("Schema migration complete: synced_at column added")
+
+        # Check if token columns exist (added for usage tracking)
+        # SQLite doesn't allow adding STORED generated columns via ALTER TABLE,
+        # so we need to recreate the table if these columns are missing
+        if "event_model" not in columns:
+            logger.info("Migrating schema: adding token tracking columns...")
+            self._recreate_table_with_new_schema()
+            logger.info("Schema migration complete: token columns added")
+
+    def _recreate_table_with_new_schema(self):
+        """Recreate conversation_events table to add new generated columns.
+
+        SQLite doesn't support ALTER TABLE ADD COLUMN for STORED generated columns,
+        so we must recreate the table with the new schema.
+        """
+        # Create new table with updated schema
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversation_events_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                line_number INTEGER NOT NULL,
+                event_data TEXT NOT NULL,
+                user_name TEXT NOT NULL,
+                inserted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                event_type TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.type')) STORED,
+                event_message TEXT GENERATED ALWAYS AS (
+                    COALESCE(
+                        json_extract(event_data, '$.message.content[0].text') ||
+                        IIF(json_extract(event_data, '$.message.content[1].text') IS NOT NULL,
+                            char(10) || char(10) || json_extract(event_data, '$.message.content[1].text'), '') ||
+                        IIF(json_extract(event_data, '$.message.content[2].text') IS NOT NULL,
+                            char(10) || char(10) || json_extract(event_data, '$.message.content[2].text'), '') ||
+                        IIF(json_extract(event_data, '$.message.content[3].text') IS NOT NULL,
+                            char(10) || char(10) || json_extract(event_data, '$.message.content[3].text'), '') ||
+                        IIF(json_extract(event_data, '$.message.content[4].text') IS NOT NULL,
+                            char(10) || char(10) || json_extract(event_data, '$.message.content[4].text'), ''),
+                        IIF(json_type(event_data, '$.message.content') = 'text',
+                            json_extract(event_data, '$.message.content'), NULL),
+                        json_extract(event_data, '$.content')
+                    )
+                ) STORED,
+                event_git_branch TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.gitBranch')) STORED,
+                event_session_id TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.sessionId')) STORED,
+                event_uuid TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.uuid')) STORED,
+                event_timestamp TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.timestamp')) STORED,
+                event_model TEXT GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.model')) STORED,
+                event_input_tokens INTEGER GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.usage.input_tokens')) STORED,
+                event_cache_creation_input_tokens INTEGER GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.usage.cache_creation_input_tokens')) STORED,
+                event_cache_read_input_tokens INTEGER GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.usage.cache_read_input_tokens')) STORED,
+                event_output_tokens INTEGER GENERATED ALWAYS AS
+                    (json_extract(event_data, '$.message.usage.output_tokens')) STORED,
+                git_remote_url TEXT,
+                git_commit_hash TEXT,
+                synced_at DATETIME DEFAULT NULL,
+                UNIQUE(file_name, line_number)
+            )
+        """
+        )
+
+        # Copy data from old table (only non-generated columns)
+        self.cursor.execute(
+            """
+            INSERT INTO conversation_events_new
+                (id, file_name, line_number, event_data, user_name, inserted_at,
+                 git_remote_url, git_commit_hash, synced_at)
+            SELECT id, file_name, line_number, event_data, user_name, inserted_at,
+                   git_remote_url, git_commit_hash, synced_at
+            FROM conversation_events
+        """
+        )
+
+        # Drop old table and rename new one
+        self.cursor.execute("DROP TABLE conversation_events")
+        self.cursor.execute(
+            "ALTER TABLE conversation_events_new RENAME TO conversation_events"
+        )
+
+        # Recreate indexes
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_file_name ON conversation_events(file_name)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_name ON conversation_events(user_name)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_inserted_at ON conversation_events(inserted_at)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_type ON conversation_events(event_type)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_message ON conversation_events(event_message)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_git_branch ON conversation_events(event_git_branch)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_session_id ON conversation_events(event_session_id)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_uuid ON conversation_events(event_uuid)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_timestamp ON conversation_events(event_timestamp)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_synced_at ON conversation_events(synced_at)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_event_model ON conversation_events(event_model)"
+        )
+
+        self.connection.commit()
 
     def insert_event(
         self,
