@@ -91,46 +91,35 @@ else
     echo ""
 fi
 
-# Step 3: Ask about skills installation
+# Step 3: Install skills (bundled with plugin)
 SKILLS_DIR="$VIBE_CHECK_DIR/skills"
 CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
 
 echo ""
-echo "📚 Skills Installation"
-echo "   vibe-check includes Claude Code skills for natural language queries."
-echo "   These are optional if you prefer using MCP tools directly."
-echo ""
+echo "📚 Installing skills..."
 
-read -p "   Install skills to ~/.claude/skills/? [Y/n] " -n 1 -r
-echo ""
+if [ -d "$SKILLS_DIR" ]; then
+    mkdir -p "$CLAUDE_SKILLS_DIR"
+    skill_count=0
 
-if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-    if [ -d "$SKILLS_DIR" ]; then
-        mkdir -p "$CLAUDE_SKILLS_DIR"
+    # Install each skill directory
+    for skill_dir in "$SKILLS_DIR"/*/; do
+        if [ -d "$skill_dir" ]; then
+            skill_name=$(basename "$skill_dir")
+            target_dir="$CLAUDE_SKILLS_DIR/$skill_name"
 
-        # Install each skill directory
-        for skill_dir in "$SKILLS_DIR"/*/; do
-            if [ -d "$skill_dir" ]; then
-                skill_name=$(basename "$skill_dir")
-                target_dir="$CLAUDE_SKILLS_DIR/$skill_name"
-
-                if [ -d "$target_dir" ]; then
-                    echo "   Updating: $skill_name"
-                    rm -rf "$target_dir"
-                else
-                    echo "   Installing: $skill_name"
-                fi
-
-                cp -r "$skill_dir" "$target_dir"
+            if [ -d "$target_dir" ]; then
+                rm -rf "$target_dir"
             fi
-        done
 
-        echo "   ✓ Skills installed to $CLAUDE_SKILLS_DIR"
-    else
-        echo "   ⚠️  Skills directory not found at $SKILLS_DIR. Skipping."
-    fi
+            cp -r "$skill_dir" "$target_dir"
+            skill_count=$((skill_count + 1))
+        fi
+    done
+
+    echo "   ✓ Installed $skill_count skills to $CLAUDE_SKILLS_DIR"
 else
-    echo "   Skipped skills installation."
+    echo "   ⚠️  Skills directory not found. Skipping."
 fi
 
 # Done!
