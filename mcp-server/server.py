@@ -12,6 +12,7 @@ Tools:
   vibe_recent      - Show recent sessions
   vibe_session     - Get session information
   vibe_share       - Create shareable session link
+  vibe_view        - Open local web viewer for conversations
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -715,6 +716,59 @@ def vibe_open_stats() -> str:
         return f"Opened stats page in your browser:\n{stats_url}"
     except Exception as e:
         return f"Could not open browser. Visit manually:\n{stats_url}"
+
+
+@mcp.tool()
+def vibe_view(session_id: Optional[str] = None, message_uuid: Optional[str] = None) -> str:
+    """
+    Open the local web viewer for conversations.
+
+    Opens a browser to view conversations stored in the local SQLite database.
+    Requires the web server to be running (python mcp-server/web_server.py).
+
+    Args:
+        session_id: Session ID to view (optional - opens session list if not provided)
+        message_uuid: Specific message UUID to highlight and scroll to (optional)
+    """
+    import socket
+
+    port = int(os.environ.get('VIBE_CHECK_WEB_PORT', 8765))
+
+    # Check if server is running
+    def is_server_running():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(('127.0.0.1', port)) == 0
+
+    if not is_server_running():
+        return (
+            f"Local web server is not running on port {port}.\n\n"
+            "Start it with:\n"
+            "```bash\n"
+            "python ~/.vibe-check/mcp-server/web_server.py\n"
+            "```\n\n"
+            "Or if installed via git:\n"
+            "```bash\n"
+            "cd ~/Developer/vibe-check && python mcp-server/web_server.py\n"
+            "```"
+        )
+
+    # Build URL
+    if session_id:
+        url = f"http://localhost:{port}/session/{session_id}"
+        if message_uuid:
+            url += f"?msg={message_uuid}"
+    else:
+        url = f"http://localhost:{port}/"
+
+    try:
+        webbrowser.open(url)
+        if session_id:
+            if message_uuid:
+                return f"Opened session {session_id[:8]}... at message {message_uuid[:8]}... in browser:\n{url}"
+            return f"Opened session {session_id[:8]}... in browser:\n{url}"
+        return f"Opened session list in browser:\n{url}"
+    except Exception as e:
+        return f"Could not open browser. Visit manually:\n{url}"
 
 
 # =============================================================================
