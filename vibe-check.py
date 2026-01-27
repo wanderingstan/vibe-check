@@ -97,19 +97,33 @@ def get_git_info(directory: Path) -> Tuple[Optional[str], Optional[str]]:
 
 
 class StateManager:
-    """Manages state tracking for file processing using SQLite."""
+    """Manages state tracking for file processing using SQLite.
+
+    Thread-safe: All operations are protected by a reentrant lock.
+    """
 
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self.connection = None
         self.cursor = None
+        self._lock = threading.RLock()
         self._connect()
         self._migrate_from_json()
 
     def _connect(self):
-        """Establish SQLite connection."""
-        self.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        """Establish SQLite connection with thread-safety settings."""
+        self.connection = sqlite3.connect(
+            str(self.db_path),
+            timeout=30.0,  # Wait up to 30 seconds for locks
+            check_same_thread=False,
+        )
         self.cursor = self.connection.cursor()
+
+        # Enable WAL mode for better concurrent access
+        self.cursor.execute("PRAGMA journal_mode=WAL")
+        self.cursor.execute("PRAGMA synchronous=NORMAL")
+        self.cursor.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
+
         # Ensure table exists (in case StateManager is created before SQLiteManager)
         self.cursor.execute(
             """
@@ -124,7 +138,7 @@ class StateManager:
         # Log count of tracked files
         self.cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
         count = self.cursor.fetchone()[0]
-        logger.info(f"StateManager connected: {count} files tracked")
+        logger.info(f"StateManager connected: {count} files tracked (WAL mode enabled)")
 
     def _migrate_from_json(self):
         """Migrate data from legacy state.json if it exists."""
@@ -139,22 +153,23 @@ class StateManager:
             if not legacy_state:
                 return
 
-            # Check if we've already migrated (table has data)
-            self.cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
-            if self.cursor.fetchone()[0] > 0:
-                logger.debug("State already migrated, skipping JSON import")
-                return
+            with self._lock:
+                # Check if we've already migrated (table has data)
+                self.cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
+                if self.cursor.fetchone()[0] > 0:
+                    logger.debug("State already migrated, skipping JSON import")
+                    return
 
-            logger.info(f"Migrating {len(legacy_state)} entries from state.json...")
-            for filename, last_line in legacy_state.items():
-                self.cursor.execute(
-                    """
-                    INSERT OR REPLACE INTO conversation_file_state (file_name, last_line)
-                    VALUES (?, ?)
-                """,
-                    (filename, last_line),
-                )
-            self.connection.commit()
+                logger.info(f"Migrating {len(legacy_state)} entries from state.json...")
+                for filename, last_line in legacy_state.items():
+                    self.cursor.execute(
+                        """
+                        INSERT OR REPLACE INTO conversation_file_state (file_name, last_line)
+                        VALUES (?, ?)
+                    """,
+                        (filename, last_line),
+                    )
+                self.connection.commit()
             logger.info("Migration complete")
 
             # Rename old file as backup
@@ -167,26 +182,28 @@ class StateManager:
 
     def get_last_line(self, filename: str) -> int:
         """Get the last processed line number for a file."""
-        self.cursor.execute(
-            "SELECT last_line FROM conversation_file_state WHERE file_name = ?",
-            (filename,),
-        )
-        row = self.cursor.fetchone()
-        return row[0] if row else 0
+        with self._lock:
+            self.cursor.execute(
+                "SELECT last_line FROM conversation_file_state WHERE file_name = ?",
+                (filename,),
+            )
+            row = self.cursor.fetchone()
+            return row[0] if row else 0
 
     def set_last_line(self, filename: str, line_number: int):
         """Set the last processed line number for a file."""
-        self.cursor.execute(
-            """
-            INSERT INTO conversation_file_state (file_name, last_line, updated_at)
-            VALUES (?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(file_name) DO UPDATE SET
-                last_line = excluded.last_line,
-                updated_at = CURRENT_TIMESTAMP
-        """,
-            (filename, line_number),
-        )
-        self.connection.commit()
+        with self._lock:
+            self.cursor.execute(
+                """
+                INSERT INTO conversation_file_state (file_name, last_line, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(file_name) DO UPDATE SET
+                    last_line = excluded.last_line,
+                    updated_at = CURRENT_TIMESTAMP
+            """,
+                (filename, line_number),
+            )
+            self.connection.commit()
 
     def skip_to_end(self, directory: Path, debug_filter_project: Optional[str] = None):
         """Fast-forward state to the end of all existing files without processing."""
@@ -223,17 +240,18 @@ class StateManager:
 
         # Batch insert/update all at once for efficiency
         if updates:
-            self.cursor.executemany(
-                """
-                INSERT INTO conversation_file_state (file_name, last_line, updated_at)
-                VALUES (?, ?, CURRENT_TIMESTAMP)
-                ON CONFLICT(file_name) DO UPDATE SET
-                    last_line = excluded.last_line,
-                    updated_at = CURRENT_TIMESTAMP
-            """,
-                updates,
-            )
-            self.connection.commit()
+            with self._lock:
+                self.cursor.executemany(
+                    """
+                    INSERT INTO conversation_file_state (file_name, last_line, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(file_name) DO UPDATE SET
+                        last_line = excluded.last_line,
+                        updated_at = CURRENT_TIMESTAMP
+                """,
+                    updates,
+                )
+                self.connection.commit()
 
         logger.info(
             f"Fast-forwarded {count} file(s). Monitoring will start from current position."
@@ -241,17 +259,22 @@ class StateManager:
 
     def get_file_count(self) -> int:
         """Get the number of tracked conversation files."""
-        self.cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
-        return self.cursor.fetchone()[0]
+        with self._lock:
+            self.cursor.execute("SELECT COUNT(*) FROM conversation_file_state")
+            return self.cursor.fetchone()[0]
 
     def close(self):
         """Close the database connection."""
-        if self.connection:
-            self.connection.close()
+        with self._lock:
+            if self.connection:
+                self.connection.close()
 
 
 class SQLiteManager:
-    """Manages SQLite database connections and operations."""
+    """Manages SQLite database connections and operations.
+
+    Thread-safe: All operations are protected by a reentrant lock.
+    """
 
     def __init__(self, config: dict):
         """Initialize SQLite manager with configuration."""
@@ -261,6 +284,7 @@ class SQLiteManager:
         self.connection = None
         self.cursor = None
         self.db_path = None
+        self._lock = threading.RLock()
 
         if not self.enabled:
             logger.info("SQLite recording is disabled")
@@ -283,15 +307,25 @@ class SQLiteManager:
             self.enabled = False
 
     def connect(self):
-        """Establish SQLite connection."""
-        self.connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        """Establish SQLite connection with thread-safety settings."""
+        self.connection = sqlite3.connect(
+            str(self.db_path),
+            timeout=30.0,  # Wait up to 30 seconds for locks
+            check_same_thread=False,
+        )
         self.cursor = self.connection.cursor()
+
+        # Enable WAL mode for better concurrent access
+        self.cursor.execute("PRAGMA journal_mode=WAL")
+        self.cursor.execute("PRAGMA synchronous=NORMAL")
+        self.cursor.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
 
     def create_schema(self):
         """Create database schema if it doesn't exist."""
-        self.cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS conversation_events (
+        with self._lock:
+            self.cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS conversation_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 file_name TEXT NOT NULL,
                 line_number INTEGER NOT NULL,
@@ -340,113 +374,114 @@ class SQLiteManager:
                 git_remote_url TEXT,
                 git_commit_hash TEXT,
                 synced_at DATETIME DEFAULT NULL,
-                UNIQUE(file_name, line_number)
+                    UNIQUE(file_name, line_number)
             )
-        """
-        )
-
-        # Create indexes
-        self.cursor.execute(
             """
-            CREATE INDEX IF NOT EXISTS idx_file_name ON conversation_events(file_name)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_user_name ON conversation_events(user_name)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_inserted_at ON conversation_events(inserted_at)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_event_type ON conversation_events(event_type)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_event_message ON conversation_events(event_message)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_event_git_branch ON conversation_events(event_git_branch)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_event_session_id ON conversation_events(event_session_id)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_event_uuid ON conversation_events(event_uuid)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_git_remote_url ON conversation_events(git_remote_url)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_git_commit_hash ON conversation_events(git_commit_hash)
-        """
-        )
-        self.cursor.execute(
-            """
-            CREATE INDEX IF NOT EXISTS idx_synced_at ON conversation_events(synced_at)
-        """
-        )
-
-        # Create conversation_file_state table for tracking processed lines
-        self.cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS conversation_file_state (
-                file_name TEXT PRIMARY KEY,
-                last_line INTEGER NOT NULL DEFAULT 0,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """
-        )
 
-        self.connection.commit()
+            # Create indexes
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_file_name ON conversation_events(file_name)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_name ON conversation_events(user_name)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_inserted_at ON conversation_events(inserted_at)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_type ON conversation_events(event_type)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_message ON conversation_events(event_message)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_git_branch ON conversation_events(event_git_branch)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_session_id ON conversation_events(event_session_id)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_event_uuid ON conversation_events(event_uuid)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_git_remote_url ON conversation_events(git_remote_url)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_git_commit_hash ON conversation_events(git_commit_hash)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_synced_at ON conversation_events(synced_at)
+            """
+            )
+
+            # Create conversation_file_state table for tracking processed lines
+            self.cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS conversation_file_state (
+                    file_name TEXT PRIMARY KEY,
+                    last_line INTEGER NOT NULL DEFAULT 0,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """
+            )
+
+            self.connection.commit()
 
     def _migrate_schema(self):
         """Run schema migrations for existing databases."""
-        # Check if synced_at column exists
-        # Use table_xinfo to include generated columns (table_info excludes them)
-        self.cursor.execute("PRAGMA table_xinfo(conversation_events)")
-        columns = [row[1] for row in self.cursor.fetchall()]
+        with self._lock:
+            # Check if synced_at column exists
+            # Use table_xinfo to include generated columns (table_info excludes them)
+            self.cursor.execute("PRAGMA table_xinfo(conversation_events)")
+            columns = [row[1] for row in self.cursor.fetchall()]
 
-        if "synced_at" not in columns:
-            logger.info("Migrating schema: adding synced_at column...")
-            self.cursor.execute(
+            if "synced_at" not in columns:
+                logger.info("Migrating schema: adding synced_at column...")
+                self.cursor.execute(
+                    """
+                    ALTER TABLE conversation_events
+                    ADD COLUMN synced_at DATETIME DEFAULT NULL
                 """
-                ALTER TABLE conversation_events
-                ADD COLUMN synced_at DATETIME DEFAULT NULL
-            """
-            )
-            # Add index for efficient queries on unsynced events
-            self.cursor.execute(
+                )
+                # Add index for efficient queries on unsynced events
+                self.cursor.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_synced_at
+                    ON conversation_events(synced_at)
                 """
-                CREATE INDEX IF NOT EXISTS idx_synced_at
-                ON conversation_events(synced_at)
-            """
-            )
-            self.connection.commit()
-            logger.info("Schema migration complete: synced_at column added")
+                )
+                self.connection.commit()
+                logger.info("Schema migration complete: synced_at column added")
 
-        # Check if token columns exist (added for usage tracking)
-        # SQLite doesn't allow adding STORED generated columns via ALTER TABLE,
-        # so we need to recreate the table if these columns are missing
-        if "event_model" not in columns:
-            logger.info("Migrating schema: adding token tracking columns...")
-            self._recreate_table_with_new_schema()
-            logger.info("Schema migration complete: token columns added")
+            # Check if token columns exist (added for usage tracking)
+            # SQLite doesn't allow adding STORED generated columns via ALTER TABLE,
+            # so we need to recreate the table if these columns are missing
+            if "event_model" not in columns:
+                logger.info("Migrating schema: adding token tracking columns...")
+                self._recreate_table_with_new_schema()
+                logger.info("Schema migration complete: token columns added")
 
     def _recreate_table_with_new_schema(self):
         """Recreate conversation_events table to add new generated columns.
@@ -610,40 +645,76 @@ class SQLiteManager:
             # Convert event_data to JSON string
             event_json = json.dumps(event_data)
 
-            # Insert or ignore duplicates
-            query = """
-                INSERT OR IGNORE INTO conversation_events
-                (file_name, line_number, event_data, user_name, git_remote_url, git_commit_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """
-            self.cursor.execute(
-                query,
-                (
-                    filename,
-                    line_number,
-                    event_json,
-                    self.user_name,
-                    git_remote_url,
-                    git_commit_hash,
-                ),
-            )
-            self.connection.commit()
+            with self._lock:
+                # Insert or ignore duplicates
+                query = """
+                    INSERT OR IGNORE INTO conversation_events
+                    (file_name, line_number, event_data, user_name, git_remote_url, git_commit_hash)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """
+                self.cursor.execute(
+                    query,
+                    (
+                        filename,
+                        line_number,
+                        event_json,
+                        self.user_name,
+                        git_remote_url,
+                        git_commit_hash,
+                    ),
+                )
+                self.connection.commit()
 
-            # Return the row ID (lastrowid is 0 if INSERT OR IGNORE skipped)
-            if self.cursor.lastrowid:
-                return self.cursor.lastrowid
+                # Return the row ID (lastrowid is 0 if INSERT OR IGNORE skipped)
+                if self.cursor.lastrowid:
+                    return self.cursor.lastrowid
 
-            # If ignored (duplicate), find the existing row ID
-            self.cursor.execute(
-                "SELECT id FROM conversation_events WHERE file_name = ? AND line_number = ?",
-                (filename, line_number),
-            )
-            row = self.cursor.fetchone()
-            return row[0] if row else None
+                # If ignored (duplicate), find the existing row ID
+                self.cursor.execute(
+                    "SELECT id FROM conversation_events WHERE file_name = ? AND line_number = ?",
+                    (filename, line_number),
+                )
+                row = self.cursor.fetchone()
+                return row[0] if row else None
 
         except sqlite3.Error as e:
             logger.error(f"SQLite error: {e}")
             return None
+
+    def insert_events_batch(
+        self,
+        events: list,
+    ) -> int:
+        """Insert multiple events into the SQLite database in a single transaction.
+
+        Args:
+            events: List of tuples (filename, line_number, event_json, git_remote_url, git_commit_hash)
+
+        Returns:
+            Number of events successfully inserted (excludes duplicates).
+        """
+        if not self.enabled or not events:
+            return 0
+
+        try:
+            with self._lock:
+                query = """
+                    INSERT OR IGNORE INTO conversation_events
+                    (file_name, line_number, event_data, user_name, git_remote_url, git_commit_hash)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """
+                # Add user_name to each event tuple
+                events_with_user = [
+                    (e[0], e[1], e[2], self.user_name, e[3], e[4]) for e in events
+                ]
+                self.cursor.executemany(query, events_with_user)
+                inserted_count = self.cursor.rowcount
+                self.connection.commit()
+                return inserted_count if inserted_count > 0 else len(events)
+
+        except sqlite3.Error as e:
+            logger.error(f"SQLite batch insert error: {e}")
+            return 0
 
     def mark_event_synced(self, event_id: int) -> bool:
         """Mark an event as synced to the remote API.
@@ -658,12 +729,13 @@ class SQLiteManager:
             return False
 
         try:
-            self.cursor.execute(
-                "UPDATE conversation_events SET synced_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (event_id,),
-            )
-            self.connection.commit()
-            return self.cursor.rowcount > 0
+            with self._lock:
+                self.cursor.execute(
+                    "UPDATE conversation_events SET synced_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (event_id,),
+                )
+                self.connection.commit()
+                return self.cursor.rowcount > 0
         except sqlite3.Error as e:
             logger.error(f"SQLite error marking event synced: {e}")
             return False
@@ -682,17 +754,18 @@ class SQLiteManager:
             return []
 
         try:
-            self.cursor.execute(
-                """
-                SELECT id, file_name, line_number, event_data, git_remote_url, git_commit_hash
-                FROM conversation_events
-                WHERE synced_at IS NULL
-                ORDER BY id DESC
-                LIMIT ?
-            """,
-                (limit,),
-            )
-            rows = self.cursor.fetchall()
+            with self._lock:
+                self.cursor.execute(
+                    """
+                    SELECT id, file_name, line_number, event_data, git_remote_url, git_commit_hash
+                    FROM conversation_events
+                    WHERE synced_at IS NULL
+                    ORDER BY id DESC
+                    LIMIT ?
+                """,
+                    (limit,),
+                )
+                rows = self.cursor.fetchall()
             return [
                 {
                     "id": row[0],
@@ -718,13 +791,14 @@ class SQLiteManager:
             return {"total_events": 0, "synced_events": 0, "pending_events": 0}
 
         try:
-            self.cursor.execute("SELECT COUNT(*) FROM conversation_events")
-            total = self.cursor.fetchone()[0]
+            with self._lock:
+                self.cursor.execute("SELECT COUNT(*) FROM conversation_events")
+                total = self.cursor.fetchone()[0]
 
-            self.cursor.execute(
-                "SELECT COUNT(*) FROM conversation_events WHERE synced_at IS NOT NULL"
-            )
-            synced = self.cursor.fetchone()[0]
+                self.cursor.execute(
+                    "SELECT COUNT(*) FROM conversation_events WHERE synced_at IS NOT NULL"
+                )
+                synced = self.cursor.fetchone()[0]
 
             return {
                 "total_events": total,
@@ -737,10 +811,11 @@ class SQLiteManager:
 
     def close(self):
         """Close SQLite connection."""
-        if self.cursor:
-            self.cursor.close()
-        if self.connection:
-            self.connection.close()
+        with self._lock:
+            if self.cursor:
+                self.cursor.close()
+            if self.connection:
+                self.connection.close()
 
     def __del__(self):
         """Cleanup on deletion."""
@@ -826,7 +901,10 @@ class ConversationMonitor(FileSystemEventHandler):
             return False
 
     def process_file(self, file_path: Path):
-        """Process new lines in a JSONL file."""
+        """Process new lines in a JSONL file.
+
+        Uses batch inserts and single state update for efficiency.
+        """
         if not file_path.suffix == ".jsonl":
             return
 
@@ -862,36 +940,47 @@ class ConversationMonitor(FileSystemEventHandler):
 
             logger.info(f"Processing {len(new_lines)} new line(s) from {filename}")
 
-            # Track counts
-            stored_count = 0
+            # Track counts and collect events for batch insert
             skipped_count = 0
+            events_batch = []
+            final_line_number = last_line
+
+            # Get git info once for all events in this file
+            git_remote_url, git_commit_hash = get_git_info(file_path.parent)
 
             for idx, line in enumerate(new_lines):
                 line_number = last_line + idx + 1
+                final_line_number = line_number
                 line = line.strip()
 
                 if not line:
                     skipped_count += 1
-                    # Still update state to track progress through empty lines
-                    self.state_manager.set_last_line(filename, line_number)
                     continue
 
                 try:
                     # Parse JSON
                     event_data = json.loads(line)
 
-                    # Store in local database (API sync handled by background worker)
-                    if self.insert_event(filename, line_number, event_data):
-                        stored_count += 1
+                    # Redact secrets before storage
+                    event_data = self.redact_secrets_from_event(event_data)
+                    event_json = json.dumps(event_data)
 
-                    # Update state
-                    self.state_manager.set_last_line(filename, line_number)
+                    # Collect for batch insert
+                    events_batch.append(
+                        (filename, line_number, event_json, git_remote_url, git_commit_hash)
+                    )
 
                 except json.JSONDecodeError as e:
                     logger.warning(f"Invalid JSON at {filename}:{line_number}: {e}")
-                    # Still update state to skip this line
-                    self.state_manager.set_last_line(filename, line_number)
                     skipped_count += 1
+
+            # Batch insert all events (single commit)
+            stored_count = 0
+            if events_batch and self.sqlite_manager and self.sqlite_manager.enabled:
+                stored_count = self.sqlite_manager.insert_events_batch(events_batch)
+
+            # Update state once at the end (single commit)
+            self.state_manager.set_last_line(filename, final_line_number)
 
             # Log summary
             if stored_count > 0:
