@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+"""
+Git post-commit hook that adds Claude conversation transcripts as git notes.
+
+Reads session IDs from the commit message (added by prepare-commit-msg)
+and attaches full transcripts as git notes.
+
+Install:
+  ln -sf ../../scripts/post-commit .git/hooks/post-commit
+"""
+
+import sqlite3
+import subprocess
+import sys
+import re
+from pathlib import Path
+
+
+def find_database_path():
+    """Find the vibe-check database."""
+    import os
+
+    env_path = os.environ.get("VIBE_CHECK_DB")
+    if env_path:
+        path = Path(env_path).expanduser()
+        if path.exists():
+            return path
+
+    locations = [
+        Path.home() / ".vibe-check" / "vibe_check.db",
+        Path("/opt/homebrew/var/vibe-check/vibe_check.db"),
+    ]
+
+    for path in locations:
+        if path.exists():
+            return path
+
+    return None
+
+
+def get_commit_message():
+    """Get the commit message of HEAD."""
+    try:
+        return subprocess.check_output(
+            ["git", "log", "-1", "--pretty=%B"],
+            stderr=subprocess.DEVNULL,
+            text=True
+        )
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def extract_session_ids(commit_message):
+    """Extract session IDs from commit message URLs."""
+    # Match session_id parameter in URLs (full UUID format)
+    pattern = r'session_id=([a-f0-9-]{36})'
+    return re.findall(pattern, commit_message)
+
+
+def get_session_transcript(db_path, session_id):
+    """Get the full transcript for a session."""
+    uri = f"file:{db_path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+
+    try:
+        query = """
+            SELECT event_type, event_message, event_timestamp
+            FROM conversation_events
+            WHERE event_session_id = ?
+              AND event_message IS NOT NULL
+              AND event_message NOT LIKE '<%'
+            ORDER BY event_timestamp ASC
+        """
+        cursor = conn.execute(query, (session_id,))
+        rows = cursor.fetchall()
+
+        if not rows:
+            return None
+
+        lines = [f"Claude Session: {session_id}", "=" * 60, ""]
+
+        for row in rows:
+            role = (row['event_type'] or 'unknown').upper()
+            message = row['event_message'] or ''
+
+            # Truncate very long messages
+            if len(message) > 2000:
+                message = message[:2000] + "\n... [truncated]"
+
+            lines.append(f"[{role}]")
+            lines.append(message)
+            lines.append("")
+
+        return "\n".join(lines)
+
+    finally:
+        conn.close()
+
+
+def add_git_note(note_content):
+    """Add a git note to HEAD."""
+    try:
+        subprocess.run(
+            ["git", "notes", "add", "-f", "-m", note_content, "HEAD"],
+            check=True,
+            capture_output=True
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def main():
+    import os
+
+    # Check if notes are disabled
+    if os.environ.get("VIBE_CHECK_NOTES", "1") == "0":
+        sys.exit(0)
+
+    # Get commit message and extract session IDs
+    commit_message = get_commit_message()
+    session_ids = extract_session_ids(commit_message)
+
+    if not session_ids:
+        sys.exit(0)
+
+    # Find database
+    db_path = find_database_path()
+    if not db_path:
+        sys.exit(0)
+
+    # Build combined transcript
+    all_transcripts = []
+    for session_id in session_ids:
+        transcript = get_session_transcript(db_path, session_id)
+        if transcript:
+            all_transcripts.append(transcript)
+
+    if all_transcripts:
+        combined = "\n\n".join(all_transcripts)
+        add_git_note(combined)
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

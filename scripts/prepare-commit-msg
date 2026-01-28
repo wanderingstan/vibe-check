@@ -139,6 +139,35 @@ def get_relevant_sessions(db_path, branch, remote_url, hours=24):
         conn.close()
 
 
+DEFAULT_VIBE_CHECK_URL = "https://vibecheck.wanderingstan.com"
+
+
+def get_vibe_check_url():
+    """Get the vibe-check web URL from config or environment."""
+    import os
+    import json
+
+    # Check environment variable first
+    env_url = os.environ.get("VIBE_CHECK_URL")
+    if env_url:
+        return env_url.rstrip('/')
+
+    # Try to read from config file
+    config_path = Path.home() / ".vibe-check" / "config.json"
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                config = json.load(f)
+                api_url = config.get("api", {}).get("url", "")
+                if api_url:
+                    # Convert API URL to web URL (remove /api suffix)
+                    return api_url.replace("/api", "").rstrip('/')
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    return DEFAULT_VIBE_CHECK_URL
+
+
 def format_session_footer(sessions):
     """Format sessions as commit message footer."""
     if not sessions:
@@ -147,11 +176,15 @@ def format_session_footer(sessions):
     lines = ["\n\n---", "Claude Sessions:"]
 
     for s in sessions:
-        session_short = s['event_session_id'][:8]
+        session_id = s['event_session_id']
+        session_short = session_id[:8]
         msg_preview = s['first_message'] or "(no message)"
-        if len(msg_preview) > 60:
-            msg_preview = msg_preview[:57] + "..."
+        if len(msg_preview) > 50:
+            msg_preview = msg_preview[:47] + "..."
+        base_url = get_vibe_check_url()
+        url = f"{base_url}/messages?session_id={session_id}"
         lines.append(f"  - {session_short}: {msg_preview}")
+        lines.append(f"    {url}")
 
     return "\n".join(lines)
 

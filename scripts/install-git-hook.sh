@@ -1,6 +1,10 @@
 #!/bin/bash
 #
-# Install the vibe-check git hook into a repository
+# Install the vibe-check git hooks into a repository
+#
+# Installs:
+#   - prepare-commit-msg: Adds session links to commit messages
+#   - post-commit: Attaches full transcripts as git notes
 #
 # Usage:
 #   install-git-hook.sh [repo-path]
@@ -11,7 +15,6 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOOK_SOURCE="$SCRIPT_DIR/prepare-commit-msg"
 
 # Target directory
 REPO_DIR="${1:-.}"
@@ -22,27 +25,34 @@ if [ ! -d "$HOOK_DIR" ]; then
     exit 1
 fi
 
-if [ ! -f "$HOOK_SOURCE" ]; then
-    echo "Error: Hook script not found at $HOOK_SOURCE"
-    exit 1
-fi
+install_hook() {
+    local hook_name="$1"
+    local description="$2"
+    local source="$SCRIPT_DIR/$hook_name"
+    local target="$HOOK_DIR/$hook_name"
 
-TARGET="$HOOK_DIR/prepare-commit-msg"
-
-# Check for existing hook
-if [ -f "$TARGET" ]; then
-    echo "Warning: prepare-commit-msg hook already exists at $TARGET"
-    read -p "Overwrite? [y/N] " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Aborted."
-        exit 0
+    if [ ! -f "$source" ]; then
+        echo "Warning: $hook_name not found at $source, skipping"
+        return
     fi
-fi
 
-# Symlink the hook (so updates to the script are automatically used)
-ln -sf "$HOOK_SOURCE" "$TARGET"
-chmod +x "$TARGET"
+    if [ -f "$target" ] && [ ! -L "$target" ]; then
+        echo "Warning: $hook_name hook already exists at $target"
+        read -p "Overwrite? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo "  Skipped $hook_name"
+            return
+        fi
+    fi
 
-echo "✓ Installed vibe-check git hook at $TARGET"
-echo "  Claude sessions will be appended to commit messages."
+    ln -sf "$source" "$target"
+    chmod +x "$target"
+    echo "✓ Installed $hook_name: $description"
+}
+
+install_hook "prepare-commit-msg" "Adds session links to commit messages"
+install_hook "post-commit" "Attaches full transcripts as git notes"
+
+echo ""
+echo "Done. To disable notes, set VIBE_CHECK_NOTES=0"
