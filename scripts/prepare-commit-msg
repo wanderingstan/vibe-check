@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""
+Git prepare-commit-msg hook that appends relevant Claude conversation sessions
+to commit messages.
+
+Finds sessions that match:
+- Same git repository (by remote URL)
+- Same branch
+- Recent activity (within last 24 hours by default)
+
+Install:
+  cp scripts/prepare-commit-msg .git/hooks/
+  chmod +x .git/hooks/prepare-commit-msg
+
+Or symlink:
+  ln -sf ../../scripts/prepare-commit-msg .git/hooks/prepare-commit-msg
+"""
+
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+from datetime import datetime, timedelta
+
+
+def find_database_path():
+    """Find the vibe-check database."""
+    import os
+
+    env_path = os.environ.get("VIBE_CHECK_DB")
+    if env_path:
+        path = Path(env_path).expanduser()
+        if path.exists():
+            return path
+
+    locations = [
+        Path.home() / ".vibe-check" / "vibe_check.db",
+        Path("/opt/homebrew/var/vibe-check/vibe_check.db"),
+    ]
+
+    for path in locations:
+        if path.exists():
+            return path
+
+    return None
+
+
+def get_git_info():
+    """Get current git branch and remote URL."""
+    try:
+        branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True
+        ).strip()
+
+        try:
+            remote_url = subprocess.check_output(
+                ["git", "config", "--get", "remote.origin.url"],
+                stderr=subprocess.DEVNULL,
+                text=True
+            ).strip()
+        except subprocess.CalledProcessError:
+            remote_url = None
+
+        return branch, remote_url
+    except subprocess.CalledProcessError:
+        return None, None
+
+
+def get_relevant_sessions(db_path, branch, remote_url, hours=24):
+    """
+    Query for Claude sessions matching the current repo/branch.
+
+    Returns list of (session_id, first_message, event_count, start_time)
+    """
+    uri = f"file:{db_path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+
+    try:
+        # Build WHERE clause
+        where_parts = ["event_session_id IS NOT NULL"]
+        params = []
+
+        # Match branch (primary filter)
+        if branch:
+            where_parts.append("event_git_branch = ?")
+            params.append(branch)
+
+        # Match repo URL if available, but also accept NULL (git context not captured)
+        if remote_url:
+            repo_name = remote_url.split('/')[-1].replace('.git', '')
+            where_parts.append("(git_remote_url LIKE ? OR git_remote_url IS NULL)")
+            params.append(f"%{repo_name}%")
+
+        # Time filter - sessions active in last N hours
+        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+        where_parts.append("inserted_at > ?")
+        params.append(cutoff)
+
+        where_clause = " AND ".join(where_parts)
+
+        query = f"""
+            SELECT
+                event_session_id,
+                MIN(inserted_at) as first_seen,
+                MAX(inserted_at) as last_seen,
+                COUNT(*) as event_count
+            FROM conversation_events
+            WHERE {where_clause}
+            GROUP BY event_session_id
+            ORDER BY last_seen DESC
+            LIMIT 5
+        """
+
+        cursor = conn.execute(query, params)
+        sessions = [dict(row) for row in cursor.fetchall()]
+
+        # Get first real user message for each session (skip internal IDE/system tags)
+        for session in sessions:
+            msg_query = """
+                SELECT event_message
+                FROM conversation_events
+                WHERE event_session_id = ?
+                  AND event_type = 'user'
+                  AND event_message IS NOT NULL
+                  AND event_message NOT LIKE '<%'
+                ORDER BY inserted_at ASC
+                LIMIT 1
+            """
+            cursor = conn.execute(msg_query, (session['event_session_id'],))
+            row = cursor.fetchone()
+            session['first_message'] = row['event_message'][:80] if row else None
+
+        return sessions
+
+    finally:
+        conn.close()
+
+
+def format_session_footer(sessions):
+    """Format sessions as commit message footer."""
+    if not sessions:
+        return ""
+
+    lines = ["\n\n---", "Claude Sessions:"]
+
+    for s in sessions:
+        session_short = s['event_session_id'][:8]
+        msg_preview = s['first_message'] or "(no message)"
+        if len(msg_preview) > 60:
+            msg_preview = msg_preview[:57] + "..."
+        lines.append(f"  - {session_short}: {msg_preview}")
+
+    return "\n".join(lines)
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(0)
+
+    commit_msg_file = sys.argv[1]
+
+    # Skip for merge commits, amends, etc.
+    if len(sys.argv) > 2 and sys.argv[2] in ('merge', 'squash'):
+        sys.exit(0)
+
+    # Find database
+    db_path = find_database_path()
+    if not db_path:
+        # Silently exit if no database - vibe-check may not be installed
+        sys.exit(0)
+
+    # Get git context
+    branch, remote_url = get_git_info()
+    if not branch:
+        sys.exit(0)
+
+    # Query for relevant sessions
+    sessions = get_relevant_sessions(db_path, branch, remote_url)
+    if not sessions:
+        sys.exit(0)
+
+    # Append to commit message
+    footer = format_session_footer(sessions)
+    if footer:
+        with open(commit_msg_file, 'a') as f:
+            f.write(footer)
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
