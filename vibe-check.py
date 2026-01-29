@@ -35,7 +35,7 @@ LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 logger = logging.getLogger("vibe-check")
 
 # Version
-VERSION = "1.1.4"
+VERSION = "1.1.5"
 
 # Default production API URL
 DEFAULT_API_URL = "https://vibecheck.wanderingstan.com/api"
