@@ -295,10 +295,11 @@ All installation methods use the same unified location: `~/.vibe-check/`
 | **PID file** | `~/.vibe-check/.monitor.pid`  |
 | **Log file** | `~/.vibe-check/monitor.log`   |
 
-When running via `vibe-check start` (Homebrew), additional logs go to:
+When running via Homebrew service (`brew services start vibe-check`), logs go to:
 
-- `/opt/homebrew/var/log/vibe-check.log`
-- `/opt/homebrew/var/log/vibe-check.error.log`
+- `/opt/homebrew/var/log/vibe-check.log` (unified stdout + stderr)
+
+**Log rotation:** Daemon mode logs auto-rotate at 5 MB, keeping 3 backup files.
 
 **Note:** Homebrew installations symlink `/opt/homebrew/var/vibe-check` → `~/.vibe-check` for compatibility.
 

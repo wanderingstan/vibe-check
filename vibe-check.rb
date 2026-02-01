@@ -99,7 +99,7 @@ class VibeCheck < Formula
     working_dir HOMEBREW_PREFIX/"var"
     keep_alive true
     log_path var/"log/vibe-check.log"
-    error_log_path var/"log/vibe-check.error.log"
+    error_log_path var/"log/vibe-check.log"  # Unified: stderr goes to same file as stdout
     environment_variables PATH: std_service_path_env
   end
 

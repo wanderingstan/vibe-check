@@ -10,6 +10,7 @@ import argparse
 import copy
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import signal
 import subprocess
@@ -30,6 +31,10 @@ from secret_detector import redact_if_secret
 # Configure logging with timestamp format
 LOG_FORMAT = "%(asctime)s %(levelname)s %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+# Log rotation settings
+MAX_LOG_SIZE = 5 * 1024 * 1024  # 5 MB
+LOG_BACKUP_COUNT = 3  # Keep 3 rotated files (.log.1, .log.2, .log.3)
 
 # Create module-level logger
 logger = logging.getLogger("vibe-check")
@@ -52,9 +57,13 @@ def setup_logging(log_file: Optional[Path] = None, verbose: bool = False):
     formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
 
     if log_file:
-        # File handler for daemon mode
+        # Rotating file handler for daemon mode (auto-rotates at MAX_LOG_SIZE)
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file)
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=MAX_LOG_SIZE,
+            backupCount=LOG_BACKUP_COUNT
+        )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
     else:
@@ -1426,25 +1435,24 @@ def get_active_log_paths() -> list[tuple[Path, str]]:
     # Check if running as brew service
     if is_brew_service_running():
         brew_log_dir = get_brew_log_dir()
-        error_log = brew_log_dir / "vibe-check.error.log"
-        stdout_log = brew_log_dir / "vibe-check.log"
+        # Unified log (stdout + stderr go to same file as of v1.1.6)
+        unified_log = brew_log_dir / "vibe-check.log"
+        if unified_log.exists():
+            logs.append((unified_log, "brew service log"))
 
-        if error_log.exists():
-            logs.append((error_log, "brew service log"))
-        if stdout_log.exists() and stdout_log.stat().st_size > 0:
-            logs.append((stdout_log, "brew service stdout"))
-
-    # Also check daemon mode log
+    # Also check daemon mode log (for non-Homebrew installs or legacy runs)
     daemon_log = get_log_file()
     if daemon_log.exists():
-        logs.append((daemon_log, "daemon log"))
+        # If Homebrew is running, this is likely a stale log from old daemon runs
+        desc = "daemon log (stale)" if is_brew_service_running() else "daemon log"
+        logs.append((daemon_log, desc))
 
     # If nothing found, return expected paths
     if not logs:
         if is_brew_service_running():
             logs.append(
                 (
-                    get_brew_log_dir() / "vibe-check.error.log",
+                    get_brew_log_dir() / "vibe-check.log",
                     "brew service log (not created yet)",
                 )
             )
