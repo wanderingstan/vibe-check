@@ -1887,33 +1887,40 @@ def cmd_status(args):
     is_brew_service = is_homebrew_service_running()
     is_systemd = is_systemd_service_running()
 
+    print("🚀 Service status:")
     if pid:
+        print(f"   ✅ Running (PID: {pid})")
+
+        # Determine mode and auto-start status
         if is_brew_service:
-            print(f"✅ vibe-check is running as Homebrew service (PID: {pid})")
-            print("   Auto-starts on boot: yes")
+            print("   Mode:       Homebrew service")
+            print("   Auto-start: ✅ on boot")
         elif is_systemd:
-            print(f"✅ vibe-check is running as systemd service (PID: {pid})")
-            print("   Auto-starts on login: yes")
+            print("   Mode:       systemd service")
+            print("   Auto-start: ✅ on login")
         else:
-            print(f"✅ vibe-check process is running (PID: {pid})")
+            print("   Mode:       daemon")
             if is_homebrew_service():
-                print("   Auto-starts on boot: no (use 'vibe-check start' to enable)")
+                print("   Auto-start: ❌ disabled (use 'brew services start vibe-check')")
             elif is_systemd_service():
-                print("   Auto-starts on login: no (use 'vibe-check start' to enable)")
-        # Show process info if possible
+                print("   Auto-start: ❌ disabled (use 'systemctl --user enable vibe-check')")
+            else:
+                print("   Auto-start: ❌ disabled")
+
+        # Get uptime from ps
         try:
             result = subprocess.run(
-                ["ps", "-p", str(pid), "-o", "pid,etime,command"],
+                ["ps", "-p", str(pid), "-o", "etime="],
                 capture_output=True,
                 text=True,
             )
-            if result.returncode == 0:
-                print(result.stdout)
+            if result.returncode == 0 and result.stdout.strip():
+                print(f"   Uptime:     {result.stdout.strip()}")
         except Exception:
             pass
     else:
-        print("⚠️  vibe-check process is not running")
-        print("   To start: vibe-check start")
+        print("   ❌ Not running")
+        print("   To start:   vibe-check start")
 
     # Show file locations
     print("\n📁 File locations:")
