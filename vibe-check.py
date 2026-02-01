@@ -8,6 +8,7 @@ sends new events to the Vibe Check API server.
 
 import argparse
 import copy
+from datetime import datetime, timezone
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -60,9 +61,7 @@ def setup_logging(log_file: Optional[Path] = None, verbose: bool = False):
         # Rotating file handler for daemon mode (auto-rotates at MAX_LOG_SIZE)
         log_file.parent.mkdir(parents=True, exist_ok=True)
         file_handler = RotatingFileHandler(
-            log_file,
-            maxBytes=MAX_LOG_SIZE,
-            backupCount=LOG_BACKUP_COUNT
+            log_file, maxBytes=MAX_LOG_SIZE, backupCount=LOG_BACKUP_COUNT
         )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
@@ -976,7 +975,13 @@ class ConversationMonitor(FileSystemEventHandler):
 
                     # Collect for batch insert
                     events_batch.append(
-                        (filename, line_number, event_json, git_remote_url, git_commit_hash)
+                        (
+                            filename,
+                            line_number,
+                            event_json,
+                            git_remote_url,
+                            git_commit_hash,
+                        )
                     )
 
                 except json.JSONDecodeError as e:
@@ -1248,7 +1253,9 @@ def check_mcp_plugin():
 
     # Find the plugin installer
     # First check Homebrew location
-    homebrew_installer = Path("/opt/homebrew/share/vibe-check/scripts/install-plugin.sh")
+    homebrew_installer = Path(
+        "/opt/homebrew/share/vibe-check/scripts/install-plugin.sh"
+    )
     if homebrew_installer.exists():
         installer_path = homebrew_installer
         script_dir = homebrew_installer.parent.parent
@@ -1329,7 +1336,9 @@ def check_claude_skills():
                         shutil.copytree(skill_src_dir, dest)
                         installed_count += 1
                     except Exception as e:
-                        logger.warning(f"Could not install skill {skill_src_dir.name}: {e}")
+                        logger.warning(
+                            f"Could not install skill {skill_src_dir.name}: {e}"
+                        )
         if installed_count > 0:
             logger.info(
                 f"Installed {installed_count} Claude Code skills to {skills_dir}"
@@ -1438,14 +1447,21 @@ def get_active_log_paths() -> list[tuple[Path, str]]:
         # Unified log (stdout + stderr go to same file as of v1.1.6)
         unified_log = brew_log_dir / "vibe-check.log"
         if unified_log.exists():
-            logs.append((unified_log, "brew service log"))
+            logs.append((unified_log, ""))
 
-    # Also check daemon mode log (for non-Homebrew installs or legacy runs)
+        # Check for legacy error log (separate file from before v1.1.6)
+        legacy_error_log = brew_log_dir / "vibe-check.error.log"
+        if legacy_error_log.exists():
+            logs.append((legacy_error_log, "⚠️  stale, safe to delete"))
+
+    # Check daemon mode log
     daemon_log = get_log_file()
     if daemon_log.exists():
-        # If Homebrew is running, this is likely a stale log from old daemon runs
-        desc = "daemon log (stale)" if is_brew_service_running() else "daemon log"
-        logs.append((daemon_log, desc))
+        if is_brew_service_running():
+            # Stale log from old daemon runs before switching to Homebrew
+            logs.append((daemon_log, "⚠️  stale, safe to delete"))
+        else:
+            logs.append((daemon_log, ""))
 
     # If nothing found, return expected paths
     if not logs:
@@ -1453,11 +1469,11 @@ def get_active_log_paths() -> list[tuple[Path, str]]:
             logs.append(
                 (
                     get_brew_log_dir() / "vibe-check.log",
-                    "brew service log (not created yet)",
+                    "(not created yet)",
                 )
             )
         else:
-            logs.append((get_log_file(), "daemon log (not created yet)"))
+            logs.append((get_log_file(), "(not created yet)"))
 
     return logs
 
@@ -1864,7 +1880,7 @@ def get_sqlite_db_path() -> Optional[Path]:
 
 def cmd_status(args):
     """Check vibe-check process status."""
-    print(f"🧜 vibe-check v{VERSION}")
+    print(f"\033[1m🧜 vibe-check v{VERSION}\033[0m")
     print("")
 
     pid = is_running()
@@ -1941,19 +1957,26 @@ def cmd_status(args):
                 size_str = f"{size_bytes / 1024:.1f} KB"
             else:
                 size_str = f"{size_bytes / (1024 * 1024):.1f} MB"
-            print(f"   {prefix:8}  {resolved_log} ({size_str})")
+            # Show description (e.g., stale warning) if present
+            desc_str = f" {description}" if description else ""
+            print(f"   {prefix:8}  {resolved_log} ({size_str}){desc_str}")
         else:
             print(f"   {prefix:8}  {log_path} ({description})")
 
-    # PID file (resolve symlinks)
+    # PID file - only relevant for manual daemon mode (not Homebrew/systemd)
     pid_path = get_pid_file()
     if pid_path.exists():
-        print(f"   PID:      {pid_path.resolve()}")
-    else:
+        # Show if it exists (might be stale from old daemon runs)
+        if is_brew_service_running() or is_systemd_service_running():
+            print(f"   PID:      {pid_path.resolve()} ⚠️  stale, safe to delete")
+        else:
+            print(f"   PID:      {pid_path.resolve()}")
+    elif not is_brew_service_running() and not is_systemd_service_running():
+        # Only show "not created" for manual daemon mode
         print(f"   PID:      {pid_path} (not created)")
 
     # Local backup status
-    print("\n💾 Local backup:")
+    print("\n💾 Local sqlite backup:")
     conversation_dir = Path("~/.claude/projects").expanduser()
     backup_complete = False
     if db_path and db_path.exists() and conversation_dir.exists():
@@ -2086,7 +2109,31 @@ def cmd_status(args):
                     )
                     last_sync_time = cursor.fetchone()[0]
                     if last_sync_time:
-                        print(f"   Last sync: {last_sync_time}")
+                        # Calculate relative time
+                        try:
+                            sync_dt = datetime.strptime(
+                                last_sync_time, "%Y-%m-%d %H:%M:%S"
+                            )
+                            sync_dt = sync_dt.replace(tzinfo=timezone.utc)
+                            now_utc = datetime.now(timezone.utc)
+                            delta = now_utc - sync_dt
+                            total_seconds = delta.total_seconds()
+
+                            if total_seconds < 60:
+                                relative = f"{total_seconds} seconds ago"
+                            elif total_seconds < 3600:
+                                mins = int(total_seconds / 60)
+                                relative = f"{mins} min ago"
+                            elif total_seconds < 86400:
+                                hours = total_seconds / 3600
+                                relative = f"{hours:.1f} hours ago"
+                            else:
+                                days = total_seconds / 86400
+                                relative = f"{days:.1f} days ago"
+
+                            print(f"   Last sync: {last_sync_time} UTC ({relative})")
+                        except ValueError:
+                            print(f"   Last sync: {last_sync_time} UTC")
 
             else:
                 cursor.execute("SELECT COUNT(*) FROM conversation_events")
@@ -2100,7 +2147,7 @@ def cmd_status(args):
             print(f"   Error reading database: {e}")
 
     # Claude Integration status (MCP + Skills)
-    print("\n🔌 Claude Integration:")
+    print("\n🤖 Claude integration:")
 
     # MCP Plugin status
     mcp_installed = is_mcp_plugin_installed()
@@ -2141,7 +2188,11 @@ def cmd_status(args):
         print("   Skills: ❌ Not installed")
 
     # Show install hint if either is missing
-    if not mcp_installed or (skills_dir.exists() and len([s for s in skills_to_check if skill_installed(s)]) < len(skills_to_check)):
+    if not mcp_installed or (
+        skills_dir.exists()
+        and len([s for s in skills_to_check if skill_installed(s)])
+        < len(skills_to_check)
+    ):
         print("   To install: run 'vibe-check start'")
 
 
@@ -2235,10 +2286,15 @@ def cmd_uninstall(args):
             hooks = settings.get("hooks", {}).get("UserPromptSubmit", [])
             # Filter out vibe-check hooks
             original_count = len(hooks)
-            hooks = [h for h in hooks if not any(
-                "session-tracker" in cmd.get("command", "") or "vibe-check" in cmd.get("command", "")
-                for cmd in h.get("hooks", [])
-            )]
+            hooks = [
+                h
+                for h in hooks
+                if not any(
+                    "session-tracker" in cmd.get("command", "")
+                    or "vibe-check" in cmd.get("command", "")
+                    for cmd in h.get("hooks", [])
+                )
+            ]
             if len(hooks) < original_count:
                 if hooks:
                     settings["hooks"]["UserPromptSubmit"] = hooks
