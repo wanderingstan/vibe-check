@@ -2184,6 +2184,7 @@ def cmd_status(args):
         "vibe-check-view-stats",
         "vibe-check-session-id",
         "vibe-check-share",
+        "vibe-check-doctor",
     ]
 
     def skill_installed(name):
@@ -2403,24 +2404,23 @@ def cmd_logs(args):
         print(f"Error reading log file: {e}")
 
 
-def cmd_doctor(args):
-    """Launch Claude Code with troubleshooting context for vibe-check."""
-    print("🩺 Launching Claude Code for vibe-check troubleshooting...")
-    print("   This will start an interactive Claude session with context about:")
-    print("   • Current vibe-check status")
-    print("   • Configuration file location")
-    print("   • Codebase documentation (CLAUDE.md)")
-    print()
+def get_doctor_info():
+    """Get diagnostic information for vibe-check troubleshooting.
 
-    # Get current directory (should be vibe-check repo)
-    repo_dir = Path.cwd()
-
-    # Get config path
-    config_path = get_config_path()
-
-    # Get status output
+    Returns:
+        dict with keys:
+            - status_text: Full status output
+            - config_path: Path to config file
+            - db_path: Path to database file (or None)
+            - repo_dir: Current working directory
+    """
     import io
     import sys
+
+    # Get paths
+    config_path = get_config_path()
+    db_path = get_sqlite_db_path()
+    repo_dir = Path.cwd()
 
     # Capture status output
     old_stdout = sys.stdout
@@ -2433,6 +2433,29 @@ def cmd_doctor(args):
         status_text = captured_output.getvalue()
     finally:
         sys.stdout = old_stdout
+
+    return {
+        "status_text": status_text,
+        "config_path": str(config_path),
+        "db_path": str(db_path) if db_path else None,
+        "repo_dir": str(repo_dir),
+    }
+
+
+def cmd_doctor(args):
+    """Launch Claude Code with troubleshooting context for vibe-check."""
+    print("🩺 Launching Claude Code for vibe-check troubleshooting...")
+    print("   This will start an interactive Claude session with context about:")
+    print("   • Current vibe-check status")
+    print("   • Configuration file location")
+    print("   • Codebase documentation (CLAUDE.md)")
+    print()
+
+    # Get diagnostic info
+    info = get_doctor_info()
+    config_path = info["config_path"]
+    status_text = info["status_text"]
+    repo_dir = Path(info["repo_dir"])
 
     # Construct prompt for Claude
     prompt = f"""I need help troubleshooting and configuring vibe-check.

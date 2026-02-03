@@ -13,6 +13,7 @@ Tools:
   vibe_session     - Get session information
   vibe_share       - Create shareable session link
   vibe_view        - Open local web viewer for conversations
+  vibe_doctor      - Troubleshoot vibe-check setup
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -142,17 +143,23 @@ def vibe_stats(days: Optional[int] = None, repo: Optional[str] = None) -> str:
         output += "### Event Types\n"
         for et in event_types[:8]:
             pct = (et["count"] / total * 100) if total > 0 else 0
-            output += f"- {et['event_type'] or 'unknown'}: {et['count']:,} ({pct:.1f}%)\n"
+            output += (
+                f"- {et['event_type'] or 'unknown'}: {et['count']:,} ({pct:.1f}%)\n"
+            )
         output += "\n"
 
         output += "### Top Repositories\n"
         for r in repos[:5]:
-            output += f"- {r['repository']}: {r['sessions']} sessions, {r['events']} events\n"
+            output += (
+                f"- {r['repository']}: {r['sessions']} sessions, {r['events']} events\n"
+            )
         output += "\n"
 
         output += "### Recent Daily Activity\n"
         for day in daily[:7]:
-            output += f"- {day['date']}: {day['events']} events, {day['sessions']} sessions\n"
+            output += (
+                f"- {day['date']}: {day['events']} events, {day['sessions']} sessions\n"
+            )
 
         return output
 
@@ -306,7 +313,9 @@ def vibe_tools(
             pct = t["usage_count"] / total_uses * 100
             bar_len = int(pct / 5)
             bar = "#" * bar_len + "." * (20 - bar_len)
-            output += f"- **{t['tool_name']}**: {t['usage_count']:,} ({pct:.1f}%) [{bar}]\n"
+            output += (
+                f"- **{t['tool_name']}**: {t['usage_count']:,} ({pct:.1f}%) [{bar}]\n"
+            )
         output += f"\n_Total tool uses: {total_uses:,}_\n\n"
 
         if show_combinations:
@@ -556,6 +565,7 @@ def vibe_share(
         wait_for_sync: If true, retry if session not synced yet (default: true)
     """
     import time
+
     # Find config file
     config_path = os.environ.get("VIBE_CHECK_CONFIG")
     if config_path:
@@ -638,7 +648,9 @@ def vibe_share(
                 result = json.loads(response.read().decode("utf-8"))
 
             if result.get("status") == "ok" or result.get("share_url"):
-                share_url = result.get("share_url", f"{api_url}/s/{result.get('share_token', 'unknown')}")
+                share_url = result.get(
+                    "share_url", f"{api_url}/s/{result.get('share_token', 'unknown')}"
+                )
                 output = "## Session Shared Successfully\n\n"
                 output += f"**Share URL**: {share_url}\n\n"
                 output += "Anyone with this link can view the session."
@@ -719,7 +731,9 @@ def vibe_open_stats() -> str:
 
 
 @mcp.tool()
-def vibe_view(session_id: Optional[str] = None, message_uuid: Optional[str] = None) -> str:
+def vibe_view(
+    session_id: Optional[str] = None, message_uuid: Optional[str] = None
+) -> str:
     """
     Open the local web viewer for conversations.
 
@@ -732,12 +746,12 @@ def vibe_view(session_id: Optional[str] = None, message_uuid: Optional[str] = No
     """
     import socket
 
-    port = int(os.environ.get('VIBE_CHECK_WEB_PORT', 8765))
+    port = int(os.environ.get("VIBE_CHECK_WEB_PORT", 8765))
 
     # Check if server is running
     def is_server_running():
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex(('127.0.0.1', port)) == 0
+            return s.connect_ex(("127.0.0.1", port)) == 0
 
     if not is_server_running():
         return (
@@ -769,6 +783,151 @@ def vibe_view(session_id: Optional[str] = None, message_uuid: Optional[str] = No
         return f"Opened session list in browser:\n{url}"
     except Exception as e:
         return f"Could not open browser. Visit manually:\n{url}"
+
+
+@mcp.tool()
+def vibe_doctor() -> str:
+    """
+    Troubleshoot and diagnose vibe-check setup.
+
+    Runs diagnostic checks and provides guidance on fixing issues.
+    Use when user asks about vibe-check configuration or reports problems.
+    """
+    import subprocess
+
+    try:
+        # Run vibe-check status
+        result = subprocess.run(
+            ["vibe-check", "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        status_output = result.stdout if result.returncode == 0 else result.stderr
+
+        # Get config path
+        config_paths = [
+            Path.home() / ".vibe-check" / "config.json",
+            Path("/opt/homebrew/var/vibe-check/config.json"),
+        ]
+
+        config_path = None
+        config = None
+        for path in config_paths:
+            if path.exists():
+                config_path = path
+                try:
+                    with open(path) as f:
+                        config = json.load(f)
+                    break
+                except (json.JSONDecodeError, IOError):
+                    continue
+
+        output = "## Vibe-Check Diagnostic Report\n\n"
+
+        # Status section
+        output += "### Current Status\n```\n"
+        output += status_output
+        output += "\n```\n\n"
+
+        # Config section
+        if config_path:
+            output += f"### Configuration\n"
+            output += f"**Location**: `{config_path}`\n\n"
+
+            if config:
+                output += "**Key Settings**:\n"
+                monitor_dir = config.get("monitor", {}).get(
+                    "conversation_dir", "Not set"
+                )
+                output += f"- Conversation directory: `{monitor_dir}`\n"
+
+                sqlite_enabled = config.get("sqlite", {}).get("enabled", False)
+                output += f"- SQLite enabled: {sqlite_enabled}\n"
+
+                if sqlite_enabled:
+                    db_path = config.get("sqlite", {}).get("database_path", "Not set")
+                    output += f"- Database path: `{db_path}`\n"
+
+                api_enabled = config.get("api", {}).get("enabled", False)
+                output += f"- Remote sync enabled: {api_enabled}\n\n"
+        else:
+            output += "### Configuration\n"
+            output += (
+                "⚠️  Config file not found. Expected at `~/.vibe-check/config.json`\n\n"
+            )
+
+        # Recommendations section
+        output += "### Recommendations\n\n"
+
+        # Parse status output for issues
+        issues = []
+        recommendations = []
+
+        if "❌ Not running" in status_output:
+            issues.append("Service is not running")
+            recommendations.append("Start it with: `vibe-check start`")
+
+        if "MCP:    ❌" in status_output or "MCP: ❌" in status_output:
+            issues.append("MCP plugin not installed")
+            recommendations.append(
+                "Install MCP and skills with: `./scripts/install-plugin.sh`"
+            )
+
+        if "Skills: ⚠️" in status_output:
+            issues.append("Some skills are missing")
+            recommendations.append(
+                "Install missing skills with: `./scripts/install-plugin.sh`"
+            )
+
+        if "not created yet" in status_output:
+            issues.append("Database not yet created")
+            recommendations.append(
+                "Start the service and use Claude Code to generate some conversations"
+            )
+
+        if issues:
+            output += "**Issues Found**:\n"
+            for i, issue in enumerate(issues, 1):
+                output += f"{i}. {issue}\n"
+            output += "\n**Next Steps**:\n"
+            for i, rec in enumerate(recommendations, 1):
+                output += f"{i}. {rec}\n"
+            output += "\n"
+        else:
+            output += "✅ Everything looks good! Vibe-check appears to be configured and running correctly.\n\n"
+
+        # Additional help
+        output += "### Need More Help?\n\n"
+        output += "- View logs: `vibe-check logs`\n"
+        output += "- Check authentication: `vibe-check auth status`\n"
+        output += "- Restart service: `vibe-check restart`\n"
+        output += (
+            "- Documentation: `/Users/wanderingstan/Developer/vibe-check/CLAUDE.md`\n"
+        )
+
+        return output
+
+    except FileNotFoundError:
+        return (
+            "## vibe-check Not Found\n\n"
+            "The `vibe-check` command is not available.\n\n"
+            "**Installation**:\n"
+            "```bash\n"
+            "# Via Homebrew:\n"
+            "brew tap wanderingstan/vibe-check\n"
+            "brew install vibe-check\n\n"
+            "# Or via git:\n"
+            "git clone https://github.com/wanderingstan/vibe-check.git\n"
+            "cd vibe-check\n"
+            "./scripts/install.sh\n"
+            "```"
+        )
+    except subprocess.TimeoutExpired:
+        return "## Timeout\n\nThe `vibe-check status` command timed out. The service may be unresponsive."
+    except Exception as e:
+        return f"## Error\n\nFailed to run diagnostics: {e}"
 
 
 # =============================================================================
