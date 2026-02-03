@@ -127,6 +127,7 @@ cd "$PROJECT_DIR"
 # Commit formula update in main repo
 git add vibe-check.rb
 git commit -m "Update formula to ${NEW_VERSION}" || true  # May already be committed
+git push origin main
 
 echo -e "\n${GREEN}✅ Release $NEW_VERSION complete!${NC}"
 echo ""
