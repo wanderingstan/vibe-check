@@ -2403,6 +2403,86 @@ def cmd_logs(args):
         print(f"Error reading log file: {e}")
 
 
+def cmd_doctor(args):
+    """Launch Claude Code with troubleshooting context for vibe-check."""
+    print("🩺 Launching Claude Code for vibe-check troubleshooting...")
+    print("   This will start an interactive Claude session with context about:")
+    print("   • Current vibe-check status")
+    print("   • Configuration file location")
+    print("   • Codebase documentation (CLAUDE.md)")
+    print()
+
+    # Get current directory (should be vibe-check repo)
+    repo_dir = Path.cwd()
+
+    # Get config path
+    config_path = get_config_path()
+
+    # Get status output
+    import io
+    import sys
+
+    # Capture status output
+    old_stdout = sys.stdout
+    sys.stdout = captured_output = io.StringIO()
+
+    try:
+        # Run status command
+        status_args = type('Args', (), {'command': 'status'})()
+        cmd_status(status_args)
+        status_text = captured_output.getvalue()
+    finally:
+        sys.stdout = old_stdout
+
+    # Construct prompt for Claude
+    prompt = f"""I need help troubleshooting and configuring vibe-check.
+
+Please help me understand the current state and fix any issues.
+
+**Current Status:**
+```
+{status_text}
+```
+
+**Config Location:** {config_path}
+
+**Instructions:**
+1. First, review the CLAUDE.md file in this repository to understand the codebase structure
+2. Check the current status output above for any issues
+3. If I haven't already shared it, you can read the config file at: {config_path}
+4. Help me diagnose and fix any problems you see
+5. If everything looks good, help me understand how vibe-check is configured and running
+
+Please be proactive about reading relevant files and suggesting fixes."""
+
+    # Launch Claude Code with the prompt
+    try:
+        # Check if we're in the vibe-check repo
+        if not (repo_dir / "vibe-check.py").exists():
+            print(f"⚠️  Warning: Not in vibe-check repository directory")
+            print(f"   Current directory: {repo_dir}")
+            print(f"\n   Launching Claude Code anyway, but context may be limited.\n")
+
+        # Launch Claude Code with prompt via stdin
+        result = subprocess.run(
+            ["claude"],
+            input=prompt,
+            text=True,
+            cwd=str(repo_dir),
+            check=False
+        )
+
+        if result.returncode != 0:
+            print(f"\n❌ Claude Code exited with error code {result.returncode}")
+
+    except FileNotFoundError:
+        print("❌ Claude Code CLI not found.")
+        print("   Please install Claude Code first:")
+        print("   https://github.com/anthropics/claude-code")
+    except Exception as e:
+        print(f"❌ Error launching Claude Code: {e}")
+
+
 def cmd_auth_login(args):
     """Authenticate with the vibe-check server using device flow."""
     # Load config to get API URL
@@ -2688,6 +2768,7 @@ Commands:
   restart       Restart vibe-check process
   status        Check if vibe-check process is running
   logs          View vibe-check logs
+  doctor        Launch Claude Code to troubleshoot vibe-check
   uninstall     Remove vibe-check data and Claude Code skills
   auth login    Authenticate with the vibe-check server
   auth status   Show current authentication status
@@ -2701,6 +2782,7 @@ Examples:
   vibe-check stop               # Stop background monitor
   vibe-check status             # Check status
   vibe-check logs               # View logs
+  vibe-check doctor             # Get AI help troubleshooting
   vibe-check --skip-backlog     # Run foreground, skip existing conversations
         """,
     )
@@ -2773,6 +2855,12 @@ Examples:
         help="Number of lines to show (default: 50)",
     )
     parser_logs.set_defaults(func=cmd_logs)
+
+    # Doctor command
+    parser_doctor = subparsers.add_parser(
+        "doctor", help="Launch Claude Code to troubleshoot vibe-check"
+    )
+    parser_doctor.set_defaults(func=cmd_doctor)
 
     # Uninstall command
     parser_uninstall = subparsers.add_parser(
