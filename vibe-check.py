@@ -1679,16 +1679,26 @@ def cmd_start(args):
         needs_auth_prompt = True
 
     if needs_auth_prompt:
-        print("\n☁️  Remote sync is not configured.")
-        print("   This allows viewing your stats at vibecheck.wanderingstan.com")
-        print("\nWould you like to authenticate now? (Y/n): ", end="", flush=True)
+        print("\n☁️  Remote Logging Configuration")
+        print("   ═══════════════════════════════")
+        print("   Vibe Check can optionally sync your Claude Code conversations")
+        print("   to a remote server for web-based viewing and sharing.")
+        print()
+        print("   • All conversations are stored locally in SQLite")
+        print("   • Remote sync is optional and can be enabled later")
+        print()
+        print("Enable remote logging? (y/N): ", end="", flush=True)
         try:
             response = input().strip().lower()
-            if response in ["", "y", "yes"]:  # Default to yes (empty = Enter)
+            if response in ["y", "yes"]:  # Opt-in (default to NO)
                 cmd_auth_login(args)
                 print()  # blank line after auth
+            else:
+                print("\n✓ Skipping remote logging - local-only mode")
+                print("  You can enable remote sync later with: vibe-check auth login")
         except (EOFError, KeyboardInterrupt):
-            print("\nSkipping authentication. Run 'vibe-check auth login' later.")
+            print("\n✓ Skipping remote logging - local-only mode")
+            print("  You can enable remote sync later with: vibe-check auth login")
 
     # Check and auto-install MCP plugin if not present
     check_mcp_plugin()

@@ -424,24 +424,73 @@ fi
 if [ "$NEED_AUTH" = true ] && [ "$SKIP_AUTH" = false ]; then
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║   Authentication Required             ║${NC}"
+    echo -e "${BLUE}║   Remote Logging Configuration        ║${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
     echo ""
-    echo -e "${YELLOW}You need to authenticate to sync your conversations.${NC}"
-    echo -e "${YELLOW}This will open a browser to complete login.${NC}"
+    echo -e "${YELLOW}Vibe Check can optionally sync your Claude Code conversations${NC}"
+    echo -e "${YELLOW}to a remote server for web-based viewing and sharing.${NC}"
+    echo ""
+    echo -e "${BLUE}• All conversations are stored locally in SQLite${NC}"
+    echo -e "${BLUE}• Remote sync is optional and can be enabled later${NC}"
     echo ""
 
-    # Run the auth login flow
-    cd "$INSTALL_DIR"
-    source venv/bin/activate
+    # Ask user if they want to enable remote logging
+    read -p "$(echo -e ${YELLOW}"Enable remote logging? (y/N): "${NC})" -n 1 -r
+    echo ""
 
-    if python vibe-check.py auth login; then
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo ""
-        echo -e "${GREEN}✓ Authentication successful!${NC}"
+        echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
+        echo -e "${BLUE}║   Authentication Required             ║${NC}"
+        echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "${YELLOW}Opening browser to complete authentication...${NC}"
+        echo ""
+
+        # Run the auth login flow
+        cd "$INSTALL_DIR"
+        source venv/bin/activate
+
+        if python vibe-check.py auth login; then
+            echo ""
+            echo -e "${GREEN}✓ Authentication successful!${NC}"
+            echo -e "${GREEN}✓ Remote logging enabled${NC}"
+        else
+            echo ""
+            echo -e "${YELLOW}⚠ Authentication skipped or failed.${NC}"
+            echo -e "${YELLOW}  You can authenticate later with: vibe-check auth login${NC}"
+        fi
     else
         echo ""
-        echo -e "${YELLOW}⚠ Authentication skipped or failed.${NC}"
-        echo -e "${YELLOW}  You can authenticate later with: vibe-check auth login${NC}"
+        echo -e "${GREEN}✓ Skipping remote logging - local-only mode${NC}"
+        echo -e "${BLUE}  All conversations will be stored locally in SQLite${NC}"
+        echo -e "${BLUE}  You can enable remote sync later with: vibe-check auth login${NC}"
+
+        # Ensure config directory exists
+        mkdir -p "$HOME/.vibe-check"
+
+        # Create local-only config if it doesn't exist
+        CONFIG_FILE="$HOME/.vibe-check/config.json"
+        if [ ! -f "$CONFIG_FILE" ]; then
+            cat > "$CONFIG_FILE" <<CONFIG
+{
+  "api": {
+    "enabled": false,
+    "url": "https://vibecheck.wanderingstan.com/api",
+    "api_key": ""
+  },
+  "sqlite": {
+    "enabled": true,
+    "database_path": "~/.vibe-check/vibe_check.db",
+    "user_name": "${USER}"
+  },
+  "monitor": {
+    "conversation_dir": "~/.claude/projects"
+  }
+}
+CONFIG
+            echo -e "${GREEN}✓ Created local-only configuration${NC}"
+        fi
     fi
 elif [ "$SKIP_AUTH" = true ]; then
     echo -e "${YELLOW}⚠ Authentication skipped (--skip-auth)${NC}"
