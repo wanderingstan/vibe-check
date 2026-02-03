@@ -1300,14 +1300,31 @@ def check_mcp_plugin():
 def check_claude_skills():
     """Check if Claude Code skills are installed and prompt to install if not."""
     skills_dir = Path.home() / ".claude" / "skills"
-    # New directory-based skill names (vibe-check-* prefix)
+
+    # Discover available skills from Homebrew or repo location
+    homebrew_skills_dir = Path("/opt/homebrew/share/vibe-check/skills")
+    repo_skills_dir = Path(__file__).parent / "skills"
+
+    # Find which skills source is available
+    skills_source_dir = None
+    if homebrew_skills_dir.exists():
+        skills_source_dir = homebrew_skills_dir
+    elif repo_skills_dir.exists():
+        skills_source_dir = repo_skills_dir
+
+    if not skills_source_dir:
+        # No skills to check
+        return
+
+    # Dynamically discover all vibe-check-* skill directories
     skills_to_check = [
-        "vibe-check-stats",
-        "vibe-check-search",
-        "vibe-check-analyze-tools",
-        "vibe-check-recent",
-        "vibe-check-view-stats",
+        d.name for d in skills_source_dir.glob("vibe-check-*")
+        if d.is_dir() and (d / "SKILL.md").exists()
     ]
+
+    if not skills_to_check:
+        # No skills found
+        return
 
     # Check if any skills are missing (check for SKILL.md inside directory)
     missing_skills = []
@@ -1327,21 +1344,28 @@ def check_claude_skills():
 
         skills_dir.mkdir(parents=True, exist_ok=True)
         installed_count = 0
+        updated_count = 0
         # Copy skill directories (new structure: vibe-check-*/SKILL.md)
         for skill_src_dir in homebrew_skills_dir.glob("vibe-check-*"):
             if skill_src_dir.is_dir():
                 dest = skills_dir / skill_src_dir.name
-                if not dest.exists():
-                    try:
+                try:
+                    if dest.exists():
+                        # Update existing skill
+                        shutil.rmtree(dest)
+                        shutil.copytree(skill_src_dir, dest)
+                        updated_count += 1
+                    else:
+                        # Install new skill
                         shutil.copytree(skill_src_dir, dest)
                         installed_count += 1
-                    except Exception as e:
-                        logger.warning(
-                            f"Could not install skill {skill_src_dir.name}: {e}"
-                        )
-        if installed_count > 0:
+                except Exception as e:
+                    logger.warning(
+                        f"Could not install/update skill {skill_src_dir.name}: {e}"
+                    )
+        if installed_count > 0 or updated_count > 0:
             logger.info(
-                f"Installed {installed_count} Claude Code skills to {skills_dir}"
+                f"Installed {installed_count} new skills, updated {updated_count} existing skills to {skills_dir}"
             )
         return
 
@@ -2175,17 +2199,29 @@ def cmd_status(args):
 
     # Skills status
     skills_dir = Path.home() / ".claude" / "skills"
-    # Skills are installed as directories with SKILL.md inside (vibe-check-* prefix)
-    skills_to_check = [
-        "vibe-check-stats",
-        "vibe-check-search",
-        "vibe-check-analyze-tools",
-        "vibe-check-recent",
-        "vibe-check-view-stats",
-        "vibe-check-session-id",
-        "vibe-check-share",
-        "vibe-check-doctor",
-    ]
+
+    # Dynamically discover available skills from Homebrew or repo location
+    homebrew_skills_dir = Path("/opt/homebrew/share/vibe-check/skills")
+    repo_skills_dir = Path(__file__).parent / "skills"
+
+    skills_source_dir = None
+    if homebrew_skills_dir.exists():
+        skills_source_dir = homebrew_skills_dir
+    elif repo_skills_dir.exists():
+        skills_source_dir = repo_skills_dir
+
+    # Get list of available skills (vibe-check-* directories with SKILL.md)
+    if skills_source_dir:
+        skills_to_check = [
+            d.name for d in skills_source_dir.glob("vibe-check-*")
+            if d.is_dir() and (d / "SKILL.md").exists()
+        ]
+    else:
+        # Fallback: check what's already installed
+        skills_to_check = [
+            d.name for d in skills_dir.glob("vibe-check-*")
+            if d.is_dir() and (d / "SKILL.md").exists()
+        ]
 
     def skill_installed(name):
         """Check if skill is installed (directory format with SKILL.md)"""
