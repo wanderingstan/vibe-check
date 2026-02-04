@@ -14,6 +14,7 @@ Tools:
   vibe_share       - Create shareable session link
   vibe_view        - Open local web viewer for conversations
   vibe_doctor      - Troubleshoot vibe-check setup
+  vibe_sql         - Execute raw SQL query (read-only)
 """
 
 from mcp.server.fastmcp import FastMCP
@@ -49,7 +50,7 @@ def vibe_stats(days: Optional[int] = None, repo: Optional[str] = None) -> str:
     params = []
 
     if days:
-        where_clauses.append("DATE(inserted_at) >= DATE('now', ?)")
+        where_clauses.append("DATE(event_timestamp) >= DATE('now', ?)")
         params.append(f"-{days} days")
 
     if repo:
@@ -65,9 +66,9 @@ def vibe_stats(days: Optional[int] = None, repo: Optional[str] = None) -> str:
             SELECT
                 COUNT(*) as total_events,
                 COUNT(DISTINCT event_session_id) as total_sessions,
-                COUNT(DISTINCT DATE(inserted_at)) as days_active,
-                MIN(DATE(inserted_at)) as first_use,
-                MAX(DATE(inserted_at)) as last_use
+                COUNT(DISTINCT DATE(event_timestamp)) as days_active,
+                MIN(DATE(event_timestamp)) as first_use,
+                MAX(DATE(event_timestamp)) as last_use
             FROM conversation_events
             WHERE {where_sql}
         """,
@@ -118,12 +119,12 @@ def vibe_stats(days: Optional[int] = None, repo: Optional[str] = None) -> str:
         daily = execute_query(
             f"""
             SELECT
-                DATE(inserted_at) as date,
+                DATE(event_timestamp) as date,
                 COUNT(*) as events,
                 COUNT(DISTINCT event_session_id) as sessions
             FROM conversation_events
             WHERE {where_sql}
-            GROUP BY DATE(inserted_at)
+            GROUP BY DATE(event_timestamp)
             ORDER BY date DESC
             LIMIT 14
         """,
@@ -195,7 +196,7 @@ def vibe_search(
         params.append(f"%{repo}%")
 
     if days:
-        where_clauses.append("DATE(inserted_at) >= DATE('now', ?)")
+        where_clauses.append("DATE(event_timestamp) >= DATE('now', ?)")
         params.append(f"-{days} days")
 
     if session_id:
@@ -212,13 +213,13 @@ def vibe_search(
                 event_session_id,
                 event_type,
                 SUBSTR(event_message, 1, 150) as message_preview,
-                inserted_at,
+                event_timestamp,
                 git_remote_url,
                 file_name
             FROM conversation_events
             WHERE {where_sql}
                 AND event_message IS NOT NULL
-            ORDER BY inserted_at DESC
+            ORDER BY event_timestamp DESC
             LIMIT ?
         """,
             tuple(params),
@@ -249,7 +250,7 @@ def vibe_search(
             if len(preview) >= 150:
                 preview += "..."
             output += f"- [{msg_type}] {preview}\n"
-            output += f"  _{r['inserted_at']}_\n"
+            output += f"  _{r['event_timestamp']}_\n"
 
         return output
 
@@ -273,7 +274,7 @@ def vibe_tools(
     """
     where_clauses = [
         "event_type = 'assistant'",
-        f"DATE(inserted_at) >= DATE('now', '-{days} days')",
+        f"DATE(event_timestamp) >= DATE('now', '-{days} days')",
     ]
     params = []
 
@@ -368,11 +369,11 @@ def vibe_recent(period: str = "today", limit: int = 10) -> str:
         limit: Maximum sessions to show (default: 10)
     """
     date_filter = {
-        "today": "DATE(inserted_at) = DATE('now')",
-        "yesterday": "DATE(inserted_at) = DATE('now', '-1 day')",
-        "week": "DATE(inserted_at) >= DATE('now', '-7 days')",
-        "month": "DATE(inserted_at) >= DATE('now', '-30 days')",
-    }.get(period, "DATE(inserted_at) = DATE('now')")
+        "today": "DATE(event_timestamp) = DATE('now')",
+        "yesterday": "DATE(event_timestamp) = DATE('now', '-1 day')",
+        "week": "DATE(event_timestamp) >= DATE('now', '-7 days')",
+        "month": "DATE(event_timestamp) >= DATE('now', '-30 days')",
+    }.get(period, "DATE(event_timestamp) = DATE('now')")
 
     try:
         # Get sessions with summary
@@ -381,8 +382,8 @@ def vibe_recent(period: str = "today", limit: int = 10) -> str:
             WITH session_summary AS (
                 SELECT
                     event_session_id,
-                    MIN(inserted_at) as session_start,
-                    MAX(inserted_at) as session_end,
+                    MIN(event_timestamp) as session_start,
+                    MAX(event_timestamp) as session_end,
                     COUNT(*) as event_count,
                     COUNT(CASE WHEN event_type = 'user' THEN 1 END) as user_messages,
                     COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,
@@ -485,8 +486,8 @@ def vibe_session(session_id: Optional[str] = None) -> str:
                 """
                 SELECT
                     event_session_id,
-                    MIN(inserted_at) as session_start,
-                    MAX(inserted_at) as session_end,
+                    MIN(event_timestamp) as session_start,
+                    MAX(event_timestamp) as session_end,
                     COUNT(*) as total_events,
                     COUNT(CASE WHEN event_type = 'user' THEN 1 END) as user_messages,
                     COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,
@@ -505,8 +506,8 @@ def vibe_session(session_id: Optional[str] = None) -> str:
                 """
                 SELECT
                     event_session_id,
-                    MIN(inserted_at) as session_start,
-                    MAX(inserted_at) as session_end,
+                    MIN(event_timestamp) as session_start,
+                    MAX(event_timestamp) as session_end,
                     COUNT(*) as total_events,
                     COUNT(CASE WHEN event_type = 'user' THEN 1 END) as user_messages,
                     COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,
@@ -516,7 +517,7 @@ def vibe_session(session_id: Optional[str] = None) -> str:
                 FROM conversation_events
                 WHERE event_session_id IS NOT NULL
                 GROUP BY event_session_id
-                ORDER BY MAX(inserted_at) DESC
+                ORDER BY MAX(event_timestamp) DESC
                 LIMIT 1
             """
             )
@@ -928,6 +929,88 @@ def vibe_doctor() -> str:
         return "## Timeout\n\nThe `vibe-check status` command timed out. The service may be unresponsive."
     except Exception as e:
         return f"## Error\n\nFailed to run diagnostics: {e}"
+
+
+@mcp.tool()
+def vibe_sql(query: str, limit: int = 100) -> str:
+    """
+    Execute a raw SQL query on the vibe-check database.
+
+    The database is opened in read-only mode, so only SELECT queries
+    will work. Useful for exploring data and custom analysis.
+
+    Args:
+        query: SQL query to execute (SELECT only)
+        limit: Maximum rows to return (default: 100, max: 1000)
+    """
+    # Safety checks
+    query_upper = query.strip().upper()
+
+    # Warn about non-SELECT queries (though read-only mode prevents writes)
+    if not query_upper.startswith("SELECT") and not query_upper.startswith("WITH"):
+        return (
+            "⚠️  Only SELECT and WITH queries are supported.\n\n"
+            "The database is opened in read-only mode, so INSERT/UPDATE/DELETE "
+            "will fail anyway, but it's best to use SELECT queries only."
+        )
+
+    # Cap limit
+    if limit > 1000:
+        limit = 1000
+
+    # Add LIMIT if not present
+    if "LIMIT" not in query_upper:
+        query = f"{query.rstrip(';')} LIMIT {limit}"
+
+    try:
+        results = execute_query(query)
+
+        if not results:
+            return "Query executed successfully but returned no rows."
+
+        # Format results as markdown table
+        output = f"## Query Results ({len(results)} rows)\n\n"
+
+        # Get column names
+        columns = list(results[0].keys())
+
+        # Build table header
+        output += "| " + " | ".join(columns) + " |\n"
+        output += "| " + " | ".join(["---"] * len(columns)) + " |\n"
+
+        # Build table rows
+        for row in results:
+            values = []
+            for col in columns:
+                val = row[col]
+                # Format value
+                if val is None:
+                    val_str = "NULL"
+                elif isinstance(val, (int, float)):
+                    val_str = str(val)
+                else:
+                    # Truncate long strings
+                    val_str = str(val)
+                    if len(val_str) > 50:
+                        val_str = val_str[:47] + "..."
+                values.append(val_str)
+            output += "| " + " | ".join(values) + " |\n"
+
+        # Show if results were limited
+        if len(results) == limit:
+            output += f"\n_Results limited to {limit} rows. Use smaller LIMIT in query for different amount._\n"
+
+        return output
+
+    except FileNotFoundError as e:
+        return str(e)
+    except Exception as e:
+        # Include schema reference in error message to help debugging
+        schema_file = Path.home() / ".vibe-check" / "SCHEMA.md"
+        schema_note = ""
+        if schema_file.exists():
+            schema_note = "\n\n**Tip:** Check the database schema at ~/.vibe-check/SCHEMA.md"
+        return f"## SQL Error\n\n```\n{e}\n```\n\nCheck your query syntax and try again.{schema_note}"
 
 
 # =============================================================================

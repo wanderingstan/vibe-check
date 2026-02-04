@@ -166,13 +166,13 @@ CREATE TABLE conversation_events (
     line_number INTEGER NOT NULL,
     event_data TEXT NOT NULL,           -- Full JSON event
     user_name TEXT NOT NULL,
-    inserted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    inserted_at DATETIME DEFAULT CURRENT_TIMESTAMP,  -- Debugging only
     event_type TEXT,                    -- Generated: user/assistant/system
     event_message TEXT,                 -- Generated: message content
     event_git_branch TEXT,              -- Generated: git branch
     event_session_id TEXT,              -- Generated: session ID
     event_uuid TEXT,                    -- Generated: event UUID
-    event_timestamp TEXT,               -- Generated: timestamp
+    event_timestamp TEXT,               -- Generated: timestamp (canonical)
     git_remote_url TEXT,                -- Git remote URL
     git_commit_hash TEXT,               -- Git commit hash
     UNIQUE(file_name, line_number)

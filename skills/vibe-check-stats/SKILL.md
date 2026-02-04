@@ -5,177 +5,128 @@ description: Query Claude Code usage statistics from the vibe-check database. Us
 
 # Claude Usage Statistics
 
-**Purpose:** Query the local vibe-check database to show Claude Code usage statistics
+**Purpose:** Query the local vibe-check database to show Claude Code usage statistics using the MCP server
 
 ---
 
-## Database Location
+## Using the MCP Tool
 
-To find the database location, run:
-```bash
-vibe-check status
-```
+The vibe-check MCP server provides a `vibe_stats` tool that handles all statistics queries automatically.
 
-The default location is: `~/.vibe-check/vibe_check.db`
+### Tool: `mcp__vibe-check__vibe_stats`
 
-**Note:** If the status shows no PID, vibe-check is not running and the database may be stale. Start it with `vibe-check start`.
-
-## Important: Use Read-Only Mode
-
-To avoid database locks when the monitor is running, always use read-only mode:
-
-```bash
-sqlite3 "file:/path/to/vibe_check.db?mode=ro" "SELECT ..."
-```
-
-Example:
-```bash
-sqlite3 "file:$HOME/.vibe-check/vibe_check.db?mode=ro" "SELECT COUNT(*) FROM conversation_events;"
-```
+**Parameters:**
+- `days` (optional): Limit to last N days
+- `repo` (optional): Filter to specific repository name
 
 ---
 
-## Core Queries
+## Usage Flow
 
-### Overview Stats
+When user requests statistics:
 
-```sql
-SELECT
-    COUNT(*) as total_events,
-    COUNT(DISTINCT event_session_id) as total_sessions,
-    COUNT(DISTINCT DATE(inserted_at)) as days_active,
-    MIN(DATE(inserted_at)) as first_use,
-    MAX(DATE(inserted_at)) as last_use
-FROM conversation_events;
+1. **Extract filters** from user's question:
+   - Time range (if specified) → convert to `days` parameter
+   - Repository (if specified) → use `repo` parameter
+
+2. **Call the MCP tool** with appropriate parameters
+
+3. **Present results** - the tool returns formatted output with:
+   - Overview (total events, sessions, days active, date range)
+   - Event type breakdown with percentages
+   - Top repositories with session and event counts
+   - Recent daily activity
+
+4. **Offer follow-up actions** based on the data shown
+
+---
+
+## Example Interactions
+
+### Example 1: Overall Stats
+
+```
+User: "show me my claude stats"
+
+Claude: [Calls mcp__vibe-check__vibe_stats with no parameters]
+
+[Tool returns formatted stats including overview, event types, top repos, daily activity]
 ```
 
-### Event Type Breakdown
+### Example 2: Recent Stats
 
-```sql
-SELECT
-    event_type,
-    COUNT(*) as count,
-    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM conversation_events), 1) as percentage
-FROM conversation_events
-GROUP BY event_type
-ORDER BY count DESC;
+```
+User: "how much have I used Claude in the last 7 days?"
+
+Claude: [Calls mcp__vibe-check__vibe_stats with days=7]
+
+[Tool returns filtered stats for last 7 days]
 ```
 
-### Daily Activity
+### Example 3: Repo-Specific Stats
 
-```sql
-SELECT
-    DATE(inserted_at) as date,
-    COUNT(*) as events,
-    COUNT(DISTINCT event_session_id) as sessions
-FROM conversation_events
-GROUP BY DATE(inserted_at)
-ORDER BY date DESC
-LIMIT 14;
+```
+User: "show me stats for the vibe-check project"
+
+Claude: [Calls mcp__vibe-check__vibe_stats with repo="vibe-check"]
+
+[Tool returns stats filtered to vibe-check repository]
 ```
 
-### Repository Breakdown
+### Example 4: Combined Filters
 
-```sql
-SELECT
-    CASE
-        WHEN git_remote_url IS NULL THEN '(no repo)'
-        WHEN git_remote_url LIKE '%.git' THEN
-            REPLACE(SUBSTR(git_remote_url,
-                CASE
-                    WHEN INSTR(git_remote_url, '/') > 0
-                    THEN LENGTH(git_remote_url) - INSTR(SUBSTR(git_remote_url, -50), '/') + 2
-                    ELSE 1
-                END
-            ), '.git', '')
-        ELSE git_remote_url
-    END as repository,
-    COUNT(DISTINCT event_session_id) as sessions,
-    COUNT(*) as events
-FROM conversation_events
-GROUP BY git_remote_url
-ORDER BY sessions DESC
-LIMIT 10;
+```
+User: "how much did I work on my-app in the last month?"
+
+Claude: [Calls mcp__vibe-check__vibe_stats with days=30, repo="my-app"]
+
+[Tool returns stats for my-app in last 30 days]
 ```
 
 ---
 
-## Response Format
+## Related Tools
 
-When triggered, you should:
+Use these complementary MCP tools:
 
-1. **Check database exists** - Use Bash to verify the database file
-2. **Run overview query** - Get basic stats
-3. **Run event breakdown** - Show what types of events are most common
-4. **Show recent activity** - Last 7-14 days of usage
-5. **Show top repositories** - Where user uses Claude most
-6. **Present in readable format** - Use tables or formatted text
-
-### Example Output
-
-```
-📊 Claude Code Usage Statistics
-
-Overview:
-- Total events: 3,247
-- Sessions: 153
-- Days active: 45
-- First use: 2024-11-28
-- Last use: 2026-01-13
-
-Event Types:
-- assistant: 1,679 (51.7%)
-- user: 1,110 (34.2%)
-- file-history-snapshot: 282 (8.7%)
-- queue-operation: 106 (3.3%)
-- summary: 75 (2.3%)
-
-Top Repositories:
-1. vibe-check: 45 sessions, 892 events
-2. my-app: 32 sessions, 567 events
-...
-```
-
----
-
-## Advanced Queries (if requested)
-
-### Busiest Hours
-
-```sql
-SELECT
-    STRFTIME('%H', inserted_at) as hour,
-    COUNT(*) as events
-FROM conversation_events
-GROUP BY hour
-ORDER BY events DESC
-LIMIT 10;
-```
-
-### Session Duration Analysis
-
-```sql
-SELECT
-    event_session_id,
-    MIN(inserted_at) as session_start,
-    MAX(inserted_at) as session_end,
-    COUNT(*) as events,
-    ROUND((JULIANDAY(MAX(inserted_at)) - JULIANDAY(MIN(inserted_at))) * 24 * 60, 1) as duration_minutes
-FROM conversation_events
-GROUP BY event_session_id
-ORDER BY duration_minutes DESC
-LIMIT 10;
-```
+- **`mcp__vibe-check__vibe_recent`**: Show recent sessions with details
+- **`mcp__vibe-check__vibe_search`**: Search for specific conversations
+- **`mcp__vibe-check__vibe_tools`**: Analyze which tools are used most
+- **`mcp__vibe-check__vibe_open_stats`**: Open web-based stats page in browser
 
 ---
 
 ## Error Handling
 
-If database not found:
-- Check both possible locations
-- Inform user vibe-check may not be installed
-- Provide installation instructions
+The MCP tool handles errors automatically:
 
-If database empty:
-- Inform user no data has been collected yet
-- Suggest checking if monitor is running
+- If database not found, it provides helpful file path information
+- If database is empty, it explains that no data has been collected yet
+- All database locking is handled internally with read-only mode
+
+---
+
+## Tips
+
+- Use without parameters first to get overall picture
+- Add `days` parameter to focus on recent activity
+- Add `repo` parameter to see project-specific usage
+- Use `vibe_open_stats` to open the web interface for interactive exploration
+- Use `vibe_tools` for detailed analysis of which Claude tools you use most
+
+---
+
+## Advanced: Custom SQL Queries
+
+For custom statistics not covered by `vibe_stats`, use the `mcp__vibe-check__vibe_sql` tool:
+
+```python
+mcp__vibe-check__vibe_sql(
+    query="SELECT DATE(event_timestamp), COUNT(*) FROM conversation_events GROUP BY DATE(event_timestamp)",
+    limit=100
+)
+```
+
+This provides read-only access to the full database with custom SQL. See the vibe-check-sql skill for more examples.
+
+For schema information, see `~/.vibe-check/SCHEMA.md` (auto-generated) or use the Read tool.

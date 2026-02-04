@@ -290,8 +290,8 @@ def render_index() -> str:
             WITH session_summary AS (
                 SELECT
                     event_session_id,
-                    MIN(inserted_at) as session_start,
-                    MAX(inserted_at) as session_end,
+                    MIN(event_timestamp) as session_start,
+                    MAX(event_timestamp) as session_end,
                     COUNT(*) as event_count,
                     COUNT(CASE WHEN event_type = 'user' THEN 1 END) as user_messages,
                     COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,
@@ -424,8 +424,8 @@ def render_session(session_id: str, highlight_msg: str = None) -> str:
         session_info = execute_query("""
             SELECT
                 event_session_id,
-                MIN(inserted_at) as session_start,
-                MAX(inserted_at) as session_end,
+                MIN(event_timestamp) as session_start,
+                MAX(event_timestamp) as session_end,
                 COUNT(*) as total_events,
                 COUNT(CASE WHEN event_type = 'user' THEN 1 END) as user_messages,
                 COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,

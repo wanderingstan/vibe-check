@@ -306,6 +306,7 @@ class SQLiteManager:
             self.connect()
             self.create_schema()
             self._migrate_schema()
+            self.export_schema_docs()
             logger.info(f"Connected to SQLite database: {self.db_path}")
         except Exception as e:
             logger.error(f"Error initializing SQLite: {e}")
@@ -456,6 +457,83 @@ class SQLiteManager:
             )
 
             self.connection.commit()
+
+    def export_schema_docs(self):
+        """Export schema documentation to ~/.vibe-check/SCHEMA.md for reference by tools."""
+        if not self.enabled or not self.cursor:
+            return
+
+        try:
+            with self._lock:
+                schema_file = Path.home() / ".vibe-check" / "SCHEMA.md"
+
+                output = "# Vibe-Check Database Schema\n\n"
+                output += "_Auto-generated from database. Do not edit manually._\n\n"
+
+                # Get all tables
+                tables = self.cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            ).fetchall()
+
+            for (table_name,) in tables:
+                output += f"## Table: {table_name}\n\n"
+
+                # Get column info
+                columns = self.cursor.execute(f"PRAGMA table_info({table_name})").fetchall()
+
+                output += "| Column | Type | Nullable | Default | Key |\n"
+                output += "|--------|------|----------|---------|-----|\n"
+
+                for col in columns:
+                    _, name, type_, notnull, dflt_value, pk = col
+                    nullable = "No" if notnull else "Yes"
+                    default = dflt_value if dflt_value else "-"
+                    key = "PK" if pk else ""
+                    output += f"| {name} | {type_} | {nullable} | {default} | {key} |\n"
+
+                output += "\n"
+
+                # Get indexes for this table
+                indexes = self.cursor.execute(f"PRAGMA index_list({table_name})").fetchall()
+                if indexes:
+                    output += "**Indexes:**\n"
+                    for idx in indexes:
+                        idx_name = idx[1]
+                        idx_cols = self.cursor.execute(f"PRAGMA index_info({idx_name})").fetchall()
+                        cols = [col[2] for col in idx_cols]  # col[2] is the column name
+                        output += f"- `{idx_name}` on ({', '.join(cols)})\n"
+                    output += "\n"
+
+                output += "---\n\n"
+
+            # Add notes about generated columns
+            output += "## Important Notes\n\n"
+            output += "### Generated Columns in conversation_events\n\n"
+            output += "The following columns are GENERATED ALWAYS (automatically computed from `event_data` JSON):\n\n"
+            output += "- `event_type` - Event type (user, assistant, etc.)\n"
+            output += "- `event_message` - Extracted message text\n"
+            output += "- `event_session_id` - Session identifier\n"
+            output += "- `event_git_branch` - Git branch name\n"
+            output += "- `event_uuid` - Unique event identifier\n"
+            output += "- `event_timestamp` - Event timestamp\n"
+            output += "- `event_model` - Claude model used\n"
+            output += "- `event_input_tokens` - Token usage (input)\n"
+            output += "- `event_cache_creation_input_tokens` - Cache creation tokens\n"
+            output += "- `event_cache_read_input_tokens` - Cache read tokens\n"
+            output += "- `event_output_tokens` - Token usage (output)\n\n"
+            output += "**Best Practice:** Query generated columns directly rather than extracting from JSON.\n\n"
+            output += "### Database Configuration\n\n"
+            output += "- Uses WAL mode for concurrent access\n"
+            output += "- event_message extracts text from various JSON structures automatically\n"
+            output += "- All date/time columns use DATETIME type with CURRENT_TIMESTAMP default\n"
+
+            # Write to file
+            schema_file.write_text(output)
+            logger.info(f"Schema documentation exported to {schema_file}")
+
+        except Exception as e:
+            logger.warning(f"Failed to export schema docs: {e}")
+            # Non-fatal - don't stop startup if this fails
 
     def _migrate_schema(self):
         """Run schema migrations for existing databases."""

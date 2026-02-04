@@ -49,7 +49,7 @@ Query the local SQLite database to find the session ID:
 
 ```bash
 sqlite3 "file:$HOME/.vibe-check/vibe_check.db?mode=ro" \
-  "SELECT event_session_id FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_[your-marker]%' ORDER BY inserted_at DESC LIMIT 1;"
+  "SELECT event_session_id FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_[your-marker]%' ORDER BY event_timestamp DESC LIMIT 1;"
 ```
 
 Replace `[your-marker]` with the actual marker you generated.
@@ -121,7 +121,7 @@ sleep 2
 
 # Step 3: Get session ID
 SESSION_ID=$(sqlite3 "file:$HOME/.vibe-check/vibe_check.db?mode=ro" \
-  "SELECT event_session_id FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_a7f3b2c9e4d1f8a6%' ORDER BY inserted_at DESC LIMIT 1;")
+  "SELECT event_session_id FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_a7f3b2c9e4d1f8a6%' ORDER BY event_timestamp DESC LIMIT 1;")
 
 # Step 4: Get config
 API_KEY=$(cat ~/.vibe-check/config.json | jq -r '.api.api_key')

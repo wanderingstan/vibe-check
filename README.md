@@ -127,6 +127,7 @@ Then ask Claude:
 "what have I been working on today?"        # See recent sessions
 "search my conversations for X"             # Search history
 "what tools do I use most?"                 # Analyze tool usage
+"vibe sql SELECT * FROM conversation_events LIMIT 5"  # Raw SQL queries
 ```
 
 ### Available Skills
@@ -135,6 +136,7 @@ Then ask Claude:
 - **search-conversations** - Full-text search across all conversations
 - **analyze-tools** - Tool usage patterns and trends
 - **recent-work** - Recent sessions and activity
+- **vibe-check-sql** - Execute raw SQL queries for custom analysis
 
 See [claude-skills/README.md](claude-skills/README.md) for details.
 
@@ -371,9 +373,9 @@ FROM conversation_events
 GROUP BY user_name;
 
 -- View recent events
-SELECT file_name, line_number, user_name, inserted_at
+SELECT file_name, line_number, user_name, event_timestamp
 FROM conversation_events
-ORDER BY inserted_at DESC
+ORDER BY event_timestamp DESC
 LIMIT 10;
 
 -- Search within JSON (requires MySQL 5.7+)

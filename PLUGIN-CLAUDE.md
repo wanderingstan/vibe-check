@@ -14,6 +14,7 @@ Use these tools to query your conversation history:
 | `vibe_recent` | Recent sessions and activity | `vibe_recent(period="today")` |
 | `vibe_session` | Get session information | `vibe_session()` |
 | `vibe_share` | Create shareable session link | `vibe_share(session_id="...")` |
+| `vibe_sql` | Execute raw SQL queries (read-only) | `vibe_sql(query="SELECT * FROM conversation_events LIMIT 5")` |
 
 ## Natural Language Triggers
 
@@ -24,6 +25,7 @@ You can also respond to natural language queries:
 - **"what tools do I use"** / **"tool analysis"** -> Use `vibe_tools` tool
 - **"what have I been working on"** / **"recent work"** -> Use `vibe_recent` tool
 - **"share this session"** -> Use `vibe_share` tool
+- **"vibe sql ..."** / **"query database"** -> Use `vibe_sql` tool
 
 ## Tool Parameters
 
@@ -52,6 +54,12 @@ You can also respond to natural language queries:
 - `session_id` (required): Session to share
 - `title` (optional): Share title
 - `slug` (optional): Custom URL slug
+
+### vibe_sql
+- `query` (required): SQL SELECT query to execute
+- `limit` (optional): Max rows to return (default: 100, max: 1000)
+
+**Note:** Database is read-only. Only SELECT and WITH queries are supported.
 
 ## Database
 

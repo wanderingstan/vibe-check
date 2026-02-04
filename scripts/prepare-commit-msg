@@ -96,7 +96,7 @@ def get_relevant_sessions(db_path, branch, remote_url, hours=24):
 
         # Time filter - sessions active in last N hours
         cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
-        where_parts.append("inserted_at > ?")
+        where_parts.append("event_timestamp > ?")
         params.append(cutoff)
 
         where_clause = " AND ".join(where_parts)
@@ -104,8 +104,8 @@ def get_relevant_sessions(db_path, branch, remote_url, hours=24):
         query = f"""
             SELECT
                 event_session_id,
-                MIN(inserted_at) as first_seen,
-                MAX(inserted_at) as last_seen,
+                MIN(event_timestamp) as first_seen,
+                MAX(event_timestamp) as last_seen,
                 COUNT(*) as event_count
             FROM conversation_events
             WHERE {where_clause}
@@ -126,7 +126,7 @@ def get_relevant_sessions(db_path, branch, remote_url, hours=24):
                   AND event_type = 'user'
                   AND event_message IS NOT NULL
                   AND event_message NOT LIKE '<%'
-                ORDER BY inserted_at ASC
+                ORDER BY event_timestamp ASC
                 LIMIT 1
             """
             cursor = conn.execute(msg_query, (session['event_session_id'],))

@@ -126,7 +126,7 @@ conversation_events (
     line_number,           -- Line in conversation file
     event_data,            -- Full JSON event
     user_name,             -- Your username
-    inserted_at,           -- When recorded
+    inserted_at,           -- When recorded (debugging only, use event_timestamp)
     event_type,            -- user/assistant/system (extracted)
     event_message,         -- Message content (extracted)
     event_git_branch,      -- Git branch (extracted)

@@ -56,7 +56,7 @@ A Python monitoring client that watches Claude Code conversation files and store
 
 **conversation_events** - Main event storage:
 ```sql
-id, file_name, line_number, event_data (JSON), user_name, inserted_at
+id, file_name, line_number, event_data (JSON), user_name, inserted_at (debugging only)
 -- Generated columns from JSON:
 event_type, event_message, event_session_id, event_git_branch, event_uuid, event_timestamp
 event_model, event_input_tokens, event_cache_creation_input_tokens,

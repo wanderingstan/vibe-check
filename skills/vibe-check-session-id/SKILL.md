@@ -78,11 +78,11 @@ Find the marker in the database:
 SELECT
     event_session_id,
     file_name,
-    inserted_at,
+    event_timestamp,
     event_type
 FROM conversation_events
 WHERE event_data LIKE '%VIBE_SESSION_MARKER_[your-marker-here]%'
-ORDER BY inserted_at DESC
+ORDER BY event_timestamp DESC
 LIMIT 1;
 ```
 
@@ -114,7 +114,7 @@ Here's the full query to run (substitute your marker and database path from `vib
 
 ```bash
 sqlite3 "file:$HOME/.vibe-check/vibe_check.db?mode=ro" \
-  "SELECT event_session_id, file_name, inserted_at FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_abc123%' ORDER BY inserted_at DESC LIMIT 1;"
+  "SELECT event_session_id, file_name, event_timestamp FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_abc123%' ORDER BY event_timestamp DESC LIMIT 1;"
 ```
 
 ---
@@ -131,7 +131,7 @@ If the marker isn't found:
 
 ### Multiple results
 
-The query orders by `inserted_at DESC` and limits to 1, so you'll get the most recent match.
+The query orders by `event_timestamp DESC` and limits to 1, so you'll get the most recent match.
 
 ---
 
@@ -142,8 +142,8 @@ Once you have the session ID, you can get more details:
 ```sql
 -- Get session statistics
 SELECT
-    MIN(inserted_at) as session_start,
-    MAX(inserted_at) as session_end,
+    MIN(event_timestamp) as session_start,
+    MAX(event_timestamp) as session_end,
     COUNT(*) as total_events,
     COUNT(CASE WHEN event_type = 'user' THEN 1 END) as user_messages,
     COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,
