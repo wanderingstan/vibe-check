@@ -44,6 +44,11 @@ Or use the Read tool to view it directly.
   - Key columns: `event_type`, `event_message`, `event_session_id`, `event_git_branch`, `git_remote_url`, `event_timestamp`, `event_data` (JSON)
   - `inserted_at` is only used for debugging. Ignore.
 
+- `messages_fts` - FTS5 full-text search index (virtual table)
+  - Columns: `event_message`, `event_type`, `event_session_id`
+  - Synced automatically with `conversation_events` via triggers
+  - Provides fast full-text search with relevance ranking
+
 - `conversation_file_state` - File processing state tracking
   - Columns: `file_name`, `last_line`, `updated_at`
 
@@ -88,6 +93,23 @@ WHERE json_extract(value, '$.type') = 'tool_use'
 GROUP BY repo, tool_name
 ORDER BY uses DESC
 LIMIT 20;
+
+-- FTS5 full-text search with relevance ranking
+SELECT
+  ce.event_type,
+  SUBSTR(ce.event_message, 1, 100) as preview,
+  fts.rank as relevance,
+  ce.event_timestamp
+FROM messages_fts fts
+JOIN conversation_events ce ON ce.id = fts.rowid
+WHERE messages_fts MATCH 'authentication AND oauth'
+ORDER BY fts.rank
+LIMIT 10;
+
+-- FTS5 phrase search
+SELECT COUNT(*)
+FROM messages_fts
+WHERE messages_fts MATCH '"full text search"';
 ```
 
 ## Usage

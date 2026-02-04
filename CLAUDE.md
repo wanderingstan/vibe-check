@@ -90,6 +90,21 @@ python vibe-check.py --skip-skills-check # Skip skills install prompt
 sqlite3 "file:<db_path>?mode=ro" "SELECT ..."
 ```
 
+## Testing Local Changes
+
+**IMPORTANT**: When testing code changes in the local repository:
+
+```bash
+# Use direct Python invocation (runs local code)
+python3 vibe-check.py
+python3 vibe-check.py --skip-backlog
+
+# NOT this (runs installed Homebrew version)
+vibe-check start
+```
+
+The `vibe-check` command calls the installed Homebrew version and will not reflect recent code changes. Always use `python3 vibe-check.py` when testing local modifications.
+
 ## Configuration
 
 **config.json**:

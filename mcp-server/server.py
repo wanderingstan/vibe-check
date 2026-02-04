@@ -179,57 +179,138 @@ def vibe_search(
     limit: int = 20,
 ) -> str:
     """
-    Search through conversation history.
+    Search through conversation history using full-text search.
 
     Args:
-        query: Search term to find in messages
+        query: Search term to find in messages (supports FTS5 syntax: AND, OR, NOT, "phrases", prefix*)
         repo: Filter to specific repository (optional)
         days: Limit to last N days (optional)
         session_id: Search within specific session (optional)
         limit: Maximum results (default: 20)
+
+    Examples:
+        - Simple search: "authentication"
+        - Multiple terms: "auth AND login"
+        - Phrase search: '"user authentication"'
+        - Prefix matching: "auth*"
+        - Boolean: "login NOT password"
     """
-    where_clauses = ["event_message LIKE ?"]
-    params = [f"%{query}%"]
-
-    if repo:
-        where_clauses.append("git_remote_url LIKE ?")
-        params.append(f"%{repo}%")
-
-    if days:
-        where_clauses.append("DATE(event_timestamp) >= DATE('now', ?)")
-        params.append(f"-{days} days")
-
-    if session_id:
-        where_clauses.append("event_session_id = ?")
-        params.append(session_id)
-
-    where_sql = " AND ".join(where_clauses)
-    params.append(limit)
-
     try:
-        results = execute_query(
-            f"""
-            SELECT
-                event_session_id,
-                event_type,
-                SUBSTR(event_message, 1, 150) as message_preview,
-                event_timestamp,
-                git_remote_url,
-                file_name
-            FROM conversation_events
-            WHERE {where_sql}
-                AND event_message IS NOT NULL
-            ORDER BY event_timestamp DESC
-            LIMIT ?
-        """,
-            tuple(params),
-        )
+        # Try FTS5 first, fall back to LIKE if FTS5 table doesn't exist
+        try:
+            # Check if FTS5 table exists
+            fts_check = execute_query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='messages_fts'"
+            )
+            use_fts = len(fts_check) > 0
+        except:
+            use_fts = False
+
+        if use_fts:
+            # Use FTS5 with relevance ranking
+            where_clauses = ["messages_fts MATCH ?"]
+            # FTS5 handles its own query syntax - don't wrap in %
+            params = [query]
+
+            # Additional filters on the main table
+            filter_clauses = []
+            if repo:
+                filter_clauses.append("ce.git_remote_url LIKE ?")
+                params.append(f"%{repo}%")
+
+            if days:
+                filter_clauses.append("DATE(ce.event_timestamp) >= DATE('now', ?)")
+                params.append(f"-{days} days")
+
+            if session_id:
+                filter_clauses.append("ce.event_session_id = ?")
+                params.append(session_id)
+
+            filter_sql = (" AND " + " AND ".join(filter_clauses)) if filter_clauses else ""
+            params.append(limit)
+
+            try:
+                results = execute_query(
+                    f"""
+                    SELECT
+                        ce.event_session_id,
+                        ce.event_type,
+                        SUBSTR(ce.event_message, 1, 150) as message_preview,
+                        ce.event_timestamp,
+                        ce.git_remote_url,
+                        ce.file_name,
+                        fts.rank as relevance
+                    FROM messages_fts fts
+                    JOIN conversation_events ce ON ce.id = fts.rowid
+                    WHERE messages_fts MATCH ?
+                        {filter_sql}
+                    ORDER BY fts.rank, ce.event_timestamp DESC
+                    LIMIT ?
+                """,
+                    tuple(params),
+                )
+            except Exception as e:
+                # If FTS5 query fails (e.g., invalid syntax), provide helpful error
+                if "fts5" in str(e).lower() or "syntax error" in str(e).lower():
+                    return (
+                        f"Search syntax error: {e}\n\n"
+                        "FTS5 query syntax:\n"
+                        "- Simple: authentication\n"
+                        '- Phrase: "user login"\n'
+                        "- Boolean: auth AND oauth\n"
+                        "- Exclude: login NOT password\n"
+                        "- Prefix: auth*\n"
+                    )
+                raise
+        else:
+            # Fall back to LIKE queries if FTS5 not available
+            where_clauses = ["event_message LIKE ?"]
+            params = [f"%{query}%"]
+
+            if repo:
+                where_clauses.append("git_remote_url LIKE ?")
+                params.append(f"%{repo}%")
+
+            if days:
+                where_clauses.append("DATE(event_timestamp) >= DATE('now', ?)")
+                params.append(f"-{days} days")
+
+            if session_id:
+                where_clauses.append("event_session_id = ?")
+                params.append(session_id)
+
+            where_sql = " AND ".join(where_clauses)
+            params.append(limit)
+
+            results = execute_query(
+                f"""
+                SELECT
+                    event_session_id,
+                    event_type,
+                    SUBSTR(event_message, 1, 150) as message_preview,
+                    event_timestamp,
+                    git_remote_url,
+                    file_name
+                FROM conversation_events
+                WHERE {where_sql}
+                    AND event_message IS NOT NULL
+                ORDER BY event_timestamp DESC
+                LIMIT ?
+            """,
+                tuple(params),
+            )
 
         if not results:
-            return f"No results found for '{query}'.\n\nTry:\n- Broader search terms\n- Different date range\n- Checking if the monitor was running"
+            tips = "Try:\n- Broader search terms\n- Different date range\n- Checking if the monitor was running"
+            if use_fts:
+                tips += '\n- Prefix matching: "auth*"\n- Phrase search: "user login"'
+            return f"No results found for '{query}'.\n\n{tips}"
 
         output = f"## Search Results for '{query}'\n\n"
-        output += f"Found {len(results)} matching messages:\n\n"
+        output += f"Found {len(results)} matching messages"
+        if use_fts:
+            output += " (ranked by relevance)"
+        output += ":\n\n"
 
         current_session = None
         for r in results:
@@ -249,7 +330,20 @@ def vibe_search(
             preview = r["message_preview"] or ""
             if len(preview) >= 150:
                 preview += "..."
-            output += f"- [{msg_type}] {preview}\n"
+
+            # Show relevance score for FTS5 results (more negative = more relevant)
+            relevance_indicator = ""
+            if use_fts and "relevance" in r and r["relevance"] is not None:
+                # FTS5 rank is negative, convert to stars (more stars = more relevant)
+                rank_value = abs(r["relevance"])
+                if rank_value < 1.0:
+                    relevance_indicator = " ⭐⭐⭐"
+                elif rank_value < 5.0:
+                    relevance_indicator = " ⭐⭐"
+                elif rank_value < 10.0:
+                    relevance_indicator = " ⭐"
+
+            output += f"- [{msg_type}]{relevance_indicator} {preview}\n"
             output += f"  _{r['event_timestamp']}_\n"
 
         return output

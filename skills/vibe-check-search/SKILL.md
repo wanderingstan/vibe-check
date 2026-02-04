@@ -16,11 +16,21 @@ The vibe-check MCP server provides a `vibe_search` tool that handles all databas
 ### Tool: `mcp__vibe-check__vibe_search`
 
 **Parameters:**
-- `query` (required): Search term to find in messages
+- `query` (required): Search term with FTS5 syntax support (see below)
 - `repo` (optional): Filter to specific repository name
 - `days` (optional): Limit to last N days
 - `session_id` (optional): Search within specific session
 - `limit` (optional): Maximum results (default: 20)
+
+**FTS5 Query Syntax** (powerful full-text search with relevance ranking):
+- **Simple**: `authentication` - finds messages containing this word
+- **Phrase**: `"user authentication"` - exact phrase match
+- **Boolean**: `auth AND oauth` - both terms must be present
+- **Exclude**: `login NOT password` - exclude certain terms
+- **Prefix**: `auth*` - matches authentication, authorize, etc.
+- **Multiple terms**: `database schema` - OR search (either term)
+
+Results are automatically ranked by relevance with star indicators (⭐⭐⭐ = most relevant).
 
 ---
 
@@ -89,6 +99,36 @@ User: "search for 'database' in session abc123"
 Claude: [Calls mcp__vibe-check__vibe_search with query="database", session_id="abc123"]
 ```
 
+### Example 5: Advanced FTS5 Phrase Search
+
+```
+User: "find conversations about 'full text search'"
+
+Claude: [Calls mcp__vibe-check__vibe_search with query='"full text search"']
+
+[Tool returns exact phrase matches, ranked by relevance with star indicators]
+```
+
+### Example 6: FTS5 Boolean Search
+
+```
+User: "find conversations about authentication but not OAuth"
+
+Claude: [Calls mcp__vibe-check__vibe_search with query="authentication NOT oauth"]
+
+[Tool returns results containing 'authentication' but excluding 'oauth']
+```
+
+### Example 7: FTS5 Prefix Search
+
+```
+User: "find conversations mentioning anything related to auth"
+
+Claude: [Calls mcp__vibe-check__vibe_search with query="auth*"]
+
+[Tool returns results matching auth, authentication, authorize, authorized, etc.]
+```
+
 ---
 
 ## Related Tools
@@ -115,8 +155,13 @@ The MCP tool handles errors automatically and provides helpful messages:
 ## Tips
 
 - For broad exploration of recent work, use `vibe_recent` first
-- For targeted keyword searches, use `vibe_search`
+- For targeted keyword searches, use `vibe_search` with FTS5 syntax
+- **Use FTS5 features** for better results:
+  - Phrase search (`"exact phrase"`) for precise matches
+  - Prefix search (`term*`) to find variations
+  - Boolean operators (`AND`, `OR`, `NOT`) for complex queries
 - Combine filters (repo + days) to narrow results
+- Results are ranked by relevance - most relevant appear first with more stars
 - Use `vibe_view` to open interesting sessions in browser for full context
 
 ---

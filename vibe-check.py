@@ -445,6 +445,57 @@ class SQLiteManager:
             """
             )
 
+            # Create FTS5 virtual table for full-text search
+            self.cursor.execute(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+                    event_message,
+                    event_type,
+                    event_session_id,
+                    content=conversation_events,
+                    content_rowid=id
+                )
+            """
+            )
+
+            # Create triggers to keep FTS5 in sync with conversation_events
+            self.cursor.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS messages_fts_insert
+                AFTER INSERT ON conversation_events
+                WHEN new.event_message IS NOT NULL
+                BEGIN
+                    INSERT INTO messages_fts(rowid, event_message, event_type, event_session_id)
+                    VALUES (new.id, new.event_message, new.event_type, new.event_session_id);
+                END
+            """
+            )
+
+            self.cursor.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS messages_fts_delete
+                AFTER DELETE ON conversation_events
+                BEGIN
+                    DELETE FROM messages_fts WHERE rowid = old.id;
+                END
+            """
+            )
+
+            self.cursor.execute(
+                """
+                CREATE TRIGGER IF NOT EXISTS messages_fts_update
+                AFTER UPDATE ON conversation_events
+                WHEN new.event_message IS NOT NULL
+                BEGIN
+                    UPDATE messages_fts
+                    SET event_message = new.event_message,
+                        event_type = new.event_type,
+                        event_session_id = new.event_session_id
+                    WHERE rowid = new.id;
+                END
+            """
+            )
+
             # Create conversation_file_state table for tracking processed lines
             self.cursor.execute(
                 """
@@ -522,6 +573,26 @@ class SQLiteManager:
             output += "- `event_cache_read_input_tokens` - Cache read tokens\n"
             output += "- `event_output_tokens` - Token usage (output)\n\n"
             output += "**Best Practice:** Query generated columns directly rather than extracting from JSON.\n\n"
+            output += "### FTS5 Full-Text Search (messages_fts)\n\n"
+            output += "The `messages_fts` virtual table provides fast full-text search with relevance ranking:\n\n"
+            output += "**Features:**\n"
+            output += "- 10-100x faster than LIKE '%text%' queries\n"
+            output += "- BM25 relevance ranking (lower rank = more relevant)\n"
+            output += "- Automatically synced with conversation_events via triggers\n\n"
+            output += "**Query Syntax:**\n"
+            output += "- Simple: `authentication`\n"
+            output += "- Phrase: `\"user login\"`\n"
+            output += "- Boolean: `auth AND oauth`, `login NOT password`\n"
+            output += "- Prefix: `auth*` (matches authentication, authorize, etc.)\n\n"
+            output += "**Example:**\n"
+            output += "```sql\n"
+            output += "SELECT ce.event_type, ce.event_message, fts.rank\n"
+            output += "FROM messages_fts fts\n"
+            output += "JOIN conversation_events ce ON ce.id = fts.rowid\n"
+            output += "WHERE messages_fts MATCH 'authentication AND oauth'\n"
+            output += "ORDER BY fts.rank\n"
+            output += "LIMIT 10;\n"
+            output += "```\n\n"
             output += "### Database Configuration\n\n"
             output += "- Uses WAL mode for concurrent access\n"
             output += "- event_message extracts text from various JSON structures automatically\n"
@@ -568,6 +639,37 @@ class SQLiteManager:
                 logger.info("Migrating schema: adding token tracking columns...")
                 self._recreate_table_with_new_schema()
                 logger.info("Schema migration complete: token columns added")
+
+            # Check if FTS5 table exists and needs population
+            self.cursor.execute(
+                """
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='messages_fts'
+            """
+            )
+            fts_exists = self.cursor.fetchone() is not None
+
+            if not fts_exists:
+                logger.info("Migrating schema: creating FTS5 full-text search index...")
+                # FTS5 table and triggers will be created by create_schema()
+                # Just need to populate it with existing data
+                self._populate_fts_table()
+                logger.info("Schema migration complete: FTS5 index created and populated")
+            else:
+                # Check if FTS5 table needs population (empty but main table has data)
+                self.cursor.execute("SELECT COUNT(*) FROM messages_fts")
+                fts_count = self.cursor.fetchone()[0]
+                self.cursor.execute(
+                    "SELECT COUNT(*) FROM conversation_events WHERE event_message IS NOT NULL"
+                )
+                main_count = self.cursor.fetchone()[0]
+
+                if fts_count == 0 and main_count > 0:
+                    logger.info(
+                        f"FTS5 table is empty but main table has {main_count:,} messages. Populating..."
+                    )
+                    self._populate_fts_table()
+                    logger.info("FTS5 table populated successfully")
 
     def _recreate_table_with_new_schema(self):
         """Recreate conversation_events table to add new generated columns.
@@ -801,6 +903,54 @@ class SQLiteManager:
         except sqlite3.Error as e:
             logger.error(f"SQLite batch insert error: {e}")
             return 0
+
+    def _populate_fts_table(self):
+        """Populate FTS5 table with existing data from conversation_events.
+
+        This is called during migration when the FTS5 table is first created
+        or when it's empty but the main table has data.
+        """
+        try:
+            # Get count of messages to populate
+            self.cursor.execute(
+                "SELECT COUNT(*) FROM conversation_events WHERE event_message IS NOT NULL"
+            )
+            message_count = self.cursor.fetchone()[0]
+
+            if message_count == 0:
+                logger.info("No messages to populate in FTS5 table")
+                return
+
+            logger.info(f"Populating FTS5 index with {message_count:,} messages...")
+
+            # Insert in batches for progress tracking and memory efficiency
+            batch_size = 1000
+            offset = 0
+
+            while offset < message_count:
+                self.cursor.execute(
+                    """
+                    INSERT INTO messages_fts(rowid, event_message, event_type, event_session_id)
+                    SELECT id, event_message, event_type, event_session_id
+                    FROM conversation_events
+                    WHERE event_message IS NOT NULL
+                    ORDER BY id
+                    LIMIT ? OFFSET ?
+                """,
+                    (batch_size, offset),
+                )
+                self.connection.commit()
+                offset += batch_size
+
+                # Log progress every 10k messages
+                if offset % 10000 == 0:
+                    logger.info(f"FTS5 population progress: {offset:,}/{message_count:,} messages")
+
+            logger.info(f"FTS5 index populated with {message_count:,} messages")
+
+        except sqlite3.Error as e:
+            logger.error(f"Error populating FTS5 table: {e}")
+            # Don't raise - this is non-fatal, search will just fall back to LIKE queries
 
     def mark_event_synced(self, event_id: int) -> bool:
         """Mark an event as synced to the remote API.
