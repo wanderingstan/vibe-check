@@ -643,6 +643,131 @@ if [ -f "$PLUGIN_SCRIPT" ]; then
     bash "$PLUGIN_SCRIPT"
 fi
 
+# Git hooks integration (optional)
+GIT_HOOK_SCRIPT="$INSTALL_DIR/scripts/install-git-hook.sh"
+if [ -f "$GIT_HOOK_SCRIPT" ]; then
+    echo ""
+    echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}║   Git Integration (Optional)          ║${NC}"
+    echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${YELLOW}Vibe Check can integrate with git to enhance your commit workflow:${NC}"
+    echo ""
+    echo -e "${BLUE}1. Commit Message Enhancement:${NC}"
+    echo -e "   Automatically adds links to relevant Claude sessions in commit messages"
+    echo -e "   (based on branch and recent activity)"
+    echo ""
+    echo -e "${BLUE}2. Git Notes (Full Transcripts):${NC}"
+    echo -e "   Attaches complete Claude conversation transcripts as git notes"
+    echo -e "   (can be disabled with VIBE_CHECK_NOTES=0)"
+    echo ""
+
+    # Ask about commit message enhancement
+    read -p "$(echo -e ${YELLOW}"Install commit message enhancement? (y/N): "${NC})" -n 1 -r
+    echo ""
+    INSTALL_PREPARE_COMMIT=false
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        INSTALL_PREPARE_COMMIT=true
+    fi
+
+    # Ask about git notes
+    read -p "$(echo -e ${YELLOW}"Install git notes (full transcripts)? (y/N): "${NC})" -n 1 -r
+    echo ""
+    INSTALL_POST_COMMIT=false
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        INSTALL_POST_COMMIT=true
+    fi
+
+    # If user wants either feature, we need to know where to install
+    if [ "$INSTALL_PREPARE_COMMIT" = true ] || [ "$INSTALL_POST_COMMIT" = true ]; then
+        echo ""
+        echo -e "${BLUE}Where would you like to install git hooks?${NC}"
+        echo -e "  [c] Current directory (if it's a git repo)"
+        echo -e "  [p] Specify a path"
+        echo -e "  [s] Skip for now (install manually later)"
+        echo ""
+        read -p "$(echo -e ${YELLOW}"Choice [c/p/s]: "${NC})" -n 1 -r
+        echo ""
+
+        HOOK_INSTALL_PATH=""
+        if [[ $REPLY =~ ^[Cc]$ ]]; then
+            if [ -d ".git" ]; then
+                HOOK_INSTALL_PATH="."
+            else
+                echo -e "${RED}Current directory is not a git repository${NC}"
+            fi
+        elif [[ $REPLY =~ ^[Pp]$ ]]; then
+            echo -n "$(echo -e ${YELLOW}"Enter git repository path: "${NC})"
+            read HOOK_INSTALL_PATH
+            HOOK_INSTALL_PATH=$(eval echo "$HOOK_INSTALL_PATH")  # Expand ~ and variables
+        fi
+
+        # Install selected hooks
+        if [ -n "$HOOK_INSTALL_PATH" ] && [ -d "$HOOK_INSTALL_PATH/.git" ]; then
+            HOOK_DIR="$HOOK_INSTALL_PATH/.git/hooks"
+
+            if [ "$INSTALL_PREPARE_COMMIT" = true ]; then
+                SOURCE="$INSTALL_DIR/scripts/prepare-commit-msg"
+                TARGET="$HOOK_DIR/prepare-commit-msg"
+
+                if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
+                    echo -e "${YELLOW}⚠ prepare-commit-msg hook already exists${NC}"
+                    read -p "$(echo -e ${YELLOW}"Overwrite? [y/N]: "${NC})" -n 1 -r
+                    echo ""
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        ln -sf "$SOURCE" "$TARGET"
+                        chmod +x "$TARGET"
+                        echo -e "${GREEN}✓ Installed prepare-commit-msg hook${NC}"
+                    fi
+                else
+                    ln -sf "$SOURCE" "$TARGET"
+                    chmod +x "$TARGET"
+                    echo -e "${GREEN}✓ Installed prepare-commit-msg hook${NC}"
+                fi
+            fi
+
+            if [ "$INSTALL_POST_COMMIT" = true ]; then
+                SOURCE="$INSTALL_DIR/scripts/post-commit"
+                TARGET="$HOOK_DIR/post-commit"
+
+                if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
+                    echo -e "${YELLOW}⚠ post-commit hook already exists${NC}"
+                    read -p "$(echo -e ${YELLOW}"Overwrite? [y/N]: "${NC})" -n 1 -r
+                    echo ""
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        ln -sf "$SOURCE" "$TARGET"
+                        chmod +x "$TARGET"
+                        echo -e "${GREEN}✓ Installed post-commit hook${NC}"
+                    fi
+                else
+                    ln -sf "$SOURCE" "$TARGET"
+                    chmod +x "$TARGET"
+                    echo -e "${GREEN}✓ Installed post-commit hook${NC}"
+                fi
+            fi
+
+            echo ""
+            echo -e "${BLUE}Git hooks installed to: $HOOK_DIR${NC}"
+            echo -e "${BLUE}To install in other repos, run:${NC}"
+            echo -e "  $INSTALL_DIR/scripts/install-git-hook.sh <repo-path>"
+        elif [ -z "$HOOK_INSTALL_PATH" ]; then
+            echo ""
+            echo -e "${YELLOW}Skipped git hooks installation${NC}"
+            echo -e "${BLUE}To install later, run:${NC}"
+            echo -e "  $INSTALL_DIR/scripts/install-git-hook.sh <repo-path>"
+        else
+            echo -e "${RED}✗ Not a valid git repository: $HOOK_INSTALL_PATH${NC}"
+            echo -e "${BLUE}To install later, run:${NC}"
+            echo -e "  $INSTALL_DIR/scripts/install-git-hook.sh <repo-path>"
+        fi
+    else
+        echo ""
+        echo -e "${YELLOW}Git integration skipped${NC}"
+        echo -e "${BLUE}To install later, run:${NC}"
+        echo -e "  $INSTALL_DIR/scripts/install-git-hook.sh <repo-path>"
+    fi
+fi
+
 # Installation complete
 echo ""
 echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"

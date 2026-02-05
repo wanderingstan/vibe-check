@@ -1645,6 +1645,98 @@ def check_claude_skills():
     print()
 
 
+def check_git_hooks():
+    """Check if git hooks are installed and prompt to install if not.
+
+    Only prompts if:
+    1. We're in a git repository
+    2. Hooks are not yet installed
+    3. The install script is available
+    """
+    # Check if we're in a git repo
+    cwd = Path.cwd()
+    hooks_dir = cwd / ".git" / "hooks"
+
+    if not hooks_dir.exists():
+        # Not a git repo, skip silently
+        return
+
+    # Check if install script is available
+    script_dir = Path(__file__).parent
+    install_script = script_dir / "scripts" / "install-git-hook.sh"
+
+    if not install_script.exists():
+        # Installer not available
+        return
+
+    # Check current hook status
+    prepare_hook = hooks_dir / "prepare-commit-msg"
+    post_hook = hooks_dir / "post-commit"
+
+    prepare_installed = False
+    post_installed = False
+
+    if prepare_hook.exists() and prepare_hook.is_symlink():
+        target = prepare_hook.resolve()
+        if "vibe-check" in str(target):
+            prepare_installed = True
+
+    if post_hook.exists() and post_hook.is_symlink():
+        target = post_hook.resolve()
+        if "vibe-check" in str(target):
+            post_installed = True
+
+    # If both hooks are already installed, nothing to do
+    if prepare_installed and post_installed:
+        return
+
+    # Hooks are missing - prompt user
+    print("\n" + "=" * 70)
+    print("🔗 Git Integration Available!")
+    print("=" * 70)
+    print("\nVibe Check can enhance your git workflow by:")
+    print("  1. Adding Claude session links to commit messages")
+    print("  2. Attaching full conversation transcripts as git notes")
+    print()
+
+    if not prepare_installed:
+        print("  ❌ Commit message enhancement: Not installed")
+    else:
+        print("  ✅ Commit message enhancement: Installed")
+
+    if not post_installed:
+        print("  ❌ Git notes (transcripts):    Not installed")
+    else:
+        print("  ✅ Git notes (transcripts):    Installed")
+
+    print()
+    print("Would you like to install git hooks for this repository? (y/n): ", end="", flush=True)
+
+    try:
+        response = input().strip().lower()
+        if response in ["y", "yes"]:
+            print("\nInstalling git hooks...")
+            result = subprocess.run(
+                [str(install_script), str(cwd)],
+                cwd=str(script_dir),
+                capture_output=False
+            )
+            if result.returncode == 0:
+                print("\n✅ Git hooks installed successfully!")
+            else:
+                print("\n⚠️  Installation had some issues. You can install manually later:")
+                print(f"   {install_script} {cwd}")
+        else:
+            print("\nSkipped. You can install git hooks later by running:")
+            print(f"  {install_script} {cwd}")
+    except (EOFError, KeyboardInterrupt):
+        print("\n\nSkipped. You can install git hooks later by running:")
+        print(f"  {install_script} {cwd}")
+
+    print("=" * 70)
+    print()
+
+
 def get_data_dir() -> Path:
     """Get the data directory path.
 
@@ -2140,6 +2232,62 @@ def get_sqlite_db_path() -> Optional[Path]:
     return None
 
 
+def check_git_hooks_status() -> dict:
+    """
+    Check the status of git hooks in common locations.
+
+    Returns dict with:
+        - cwd_hooks: dict of hooks found in current directory (if git repo)
+        - install_script: path to install script if available
+    """
+    result = {
+        "cwd_hooks": {},
+        "install_script": None
+    }
+
+    # Check if current directory is a git repo
+    cwd = Path.cwd()
+    hooks_dir = cwd / ".git" / "hooks"
+
+    if hooks_dir.exists():
+        # Check for prepare-commit-msg
+        prepare_hook = hooks_dir / "prepare-commit-msg"
+        if prepare_hook.exists():
+            # Check if it's a symlink to our hook
+            if prepare_hook.is_symlink():
+                target = prepare_hook.resolve()
+                if "vibe-check" in str(target):
+                    result["cwd_hooks"]["prepare-commit-msg"] = "installed"
+                else:
+                    result["cwd_hooks"]["prepare-commit-msg"] = "other"
+            else:
+                result["cwd_hooks"]["prepare-commit-msg"] = "other"
+        else:
+            result["cwd_hooks"]["prepare-commit-msg"] = "not_installed"
+
+        # Check for post-commit
+        post_hook = hooks_dir / "post-commit"
+        if post_hook.exists():
+            if post_hook.is_symlink():
+                target = post_hook.resolve()
+                if "vibe-check" in str(target):
+                    result["cwd_hooks"]["post-commit"] = "installed"
+                else:
+                    result["cwd_hooks"]["post-commit"] = "other"
+            else:
+                result["cwd_hooks"]["post-commit"] = "other"
+        else:
+            result["cwd_hooks"]["post-commit"] = "not_installed"
+
+    # Check if install script is available
+    install_dir = Path(__file__).parent
+    install_script = install_dir / "scripts" / "install-git-hook.sh"
+    if install_script.exists():
+        result["install_script"] = install_script
+
+    return result
+
+
 def cmd_status(args):
     """Check vibe-check process status."""
     print(f"\033[1m🧜 vibe-check v{VERSION}\033[0m")
@@ -2476,6 +2624,43 @@ def cmd_status(args):
         < len(skills_to_check)
     ):
         print("   To install: run 'vibe-check start'")
+
+    # Git integration status
+    print("\n🔗 Git integration:")
+    git_status = check_git_hooks_status()
+
+    if git_status["cwd_hooks"]:
+        # We're in a git repo, show status of hooks in current directory
+        prepare_status = git_status["cwd_hooks"].get("prepare-commit-msg", "not_installed")
+        post_status = git_status["cwd_hooks"].get("post-commit", "not_installed")
+
+        if prepare_status == "installed":
+            print("   Commit messages: ✅ Enabled")
+        elif prepare_status == "other":
+            print("   Commit messages: ⚠️  Other hook installed")
+        else:
+            print("   Commit messages: ❌ Not installed")
+
+        if post_status == "installed":
+            print("   Git notes:       ✅ Enabled")
+        elif post_status == "other":
+            print("   Git notes:       ⚠️  Other hook installed")
+        else:
+            print("   Git notes:       ❌ Not installed")
+
+        # Show install instructions if not all hooks are installed
+        if prepare_status != "installed" or post_status != "installed":
+            if git_status["install_script"]:
+                print(f"   To install:      {git_status['install_script']} .")
+            else:
+                print("   To install:      vibe-check (re-run installer)")
+    else:
+        # Not in a git repo
+        print("   Not in a git repository")
+        if git_status["install_script"]:
+            print(f"   To install:      cd <repo> && {git_status['install_script']} .")
+        else:
+            print("   To install:      Run from a git repo")
 
 
 def cmd_uninstall(args):
@@ -2993,6 +3178,10 @@ def run_monitor(args):
     # Check for Claude Code skills (unless skipped)
     if not args.skip_skills_check:
         check_claude_skills()
+
+    # Check for git hooks (unless skipped)
+    if not args.skip_skills_check:
+        check_git_hooks()
 
     # Debug filter
     debug_filter = config["monitor"].get("debug_filter_project")
