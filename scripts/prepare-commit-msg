@@ -195,6 +195,14 @@ def main():
 
     commit_msg_file = sys.argv[1]
 
+    # Check for and call chained hook first (.local version)
+    hook_local = Path(__file__).with_suffix('.local')
+    if hook_local.exists() and hook_local.stat().st_mode & 0o111:  # Check if executable
+        try:
+            subprocess.run([str(hook_local)] + sys.argv[1:], check=False)
+        except Exception:
+            pass  # Don't fail if chained hook fails
+
     # Skip for merge commits, amends, etc.
     if len(sys.argv) > 2 and sys.argv[2] in ('merge', 'squash'):
         sys.exit(0)

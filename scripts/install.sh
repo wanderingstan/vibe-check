@@ -678,93 +678,181 @@ if [ -f "$GIT_HOOK_SCRIPT" ]; then
         INSTALL_POST_COMMIT=true
     fi
 
+    # Helper function to install hooks with chaining support
+    install_hook_with_chaining() {
+        local source_hook="$1"
+        local target_hook="$2"
+        local hook_name="$3"
+
+        if [ -f "$target_hook" ] && [ ! -L "$target_hook" ]; then
+            # Existing hook found - offer to chain
+            echo -e "${YELLOW}⚠ $hook_name hook already exists${NC}"
+            echo -e "  [c] Chain (keep existing, run vibe-check after) - Recommended"
+            echo -e "  [r] Replace (backup old hook)"
+            echo -e "  [s] Skip"
+            read -p "$(echo -e ${YELLOW}"Choice [c/r/s]: "${NC})" -n 1 -r
+            echo ""
+
+            if [[ $REPLY =~ ^[Cc]$ ]]; then
+                # Chain: rename existing to .local, install ours
+                mv "$target_hook" "${target_hook}.local"
+                chmod +x "${target_hook}.local"
+                ln -sf "$source_hook" "$target_hook"
+                chmod +x "$target_hook"
+                echo -e "${GREEN}✓ Installed $hook_name hook (chained with existing)${NC}"
+            elif [[ $REPLY =~ ^[Rr]$ ]]; then
+                # Replace: backup and install ours
+                cp "$target_hook" "${target_hook}.backup"
+                ln -sf "$source_hook" "$target_hook"
+                chmod +x "$target_hook"
+                echo -e "${GREEN}✓ Installed $hook_name hook (old hook backed up)${NC}"
+            else
+                echo -e "${YELLOW}Skipped $hook_name hook${NC}"
+            fi
+        else
+            # No existing hook or it's already a symlink
+            ln -sf "$source_hook" "$target_hook"
+            chmod +x "$target_hook"
+            echo -e "${GREEN}✓ Installed $hook_name hook${NC}"
+        fi
+    }
+
     # If user wants either feature, we need to know where to install
     if [ "$INSTALL_PREPARE_COMMIT" = true ] || [ "$INSTALL_POST_COMMIT" = true ]; then
         echo ""
         echo -e "${BLUE}Where would you like to install git hooks?${NC}"
-        echo -e "  [c] Current directory (if it's a git repo)"
-        echo -e "  [p] Specify a path"
-        echo -e "  [s] Skip for now (install manually later)"
+        echo -e "  [g] Global (all repos) - Recommended"
+        echo -e "  [c] Current directory only"
+        echo -e "  [b] Both (global + current directory)"
+        echo -e "  [s] Skip for now"
         echo ""
-        read -p "$(echo -e ${YELLOW}"Choice [c/p/s]: "${NC})" -n 1 -r
+        read -p "$(echo -e ${YELLOW}"Choice [g/c/b/s]: "${NC})" -n 1 -r
         echo ""
 
-        HOOK_INSTALL_PATH=""
-        if [[ $REPLY =~ ^[Cc]$ ]]; then
-            if [ -d ".git" ]; then
-                HOOK_INSTALL_PATH="."
-            else
-                echo -e "${RED}Current directory is not a git repository${NC}"
-            fi
-        elif [[ $REPLY =~ ^[Pp]$ ]]; then
-            echo -n "$(echo -e ${YELLOW}"Enter git repository path: "${NC})"
-            read HOOK_INSTALL_PATH
-            HOOK_INSTALL_PATH=$(eval echo "$HOOK_INSTALL_PATH")  # Expand ~ and variables
+        INSTALL_GLOBAL=false
+        INSTALL_LOCAL=false
+
+        if [[ $REPLY =~ ^[Gg]$ ]]; then
+            INSTALL_GLOBAL=true
+        elif [[ $REPLY =~ ^[Cc]$ ]]; then
+            INSTALL_LOCAL=true
+        elif [[ $REPLY =~ ^[Bb]$ ]]; then
+            INSTALL_GLOBAL=true
+            INSTALL_LOCAL=true
         fi
 
-        # Install selected hooks
-        if [ -n "$HOOK_INSTALL_PATH" ] && [ -d "$HOOK_INSTALL_PATH/.git" ]; then
-            HOOK_DIR="$HOOK_INSTALL_PATH/.git/hooks"
+        # Install global hooks
+        if [ "$INSTALL_GLOBAL" = true ]; then
+            GLOBAL_HOOKS_DIR="$HOME/.vibe-check/git-hooks"
+            mkdir -p "$GLOBAL_HOOKS_DIR"
+
+            echo ""
+            echo -e "${BLUE}Installing global git hooks...${NC}"
 
             if [ "$INSTALL_PREPARE_COMMIT" = true ]; then
                 SOURCE="$INSTALL_DIR/scripts/prepare-commit-msg"
-                TARGET="$HOOK_DIR/prepare-commit-msg"
-
-                if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
-                    echo -e "${YELLOW}⚠ prepare-commit-msg hook already exists${NC}"
-                    read -p "$(echo -e ${YELLOW}"Overwrite? [y/N]: "${NC})" -n 1 -r
-                    echo ""
-                    if [[ $REPLY =~ ^[Yy]$ ]]; then
-                        ln -sf "$SOURCE" "$TARGET"
-                        chmod +x "$TARGET"
-                        echo -e "${GREEN}✓ Installed prepare-commit-msg hook${NC}"
-                    fi
-                else
-                    ln -sf "$SOURCE" "$TARGET"
-                    chmod +x "$TARGET"
-                    echo -e "${GREEN}✓ Installed prepare-commit-msg hook${NC}"
-                fi
+                TARGET="$GLOBAL_HOOKS_DIR/prepare-commit-msg"
+                ln -sf "$SOURCE" "$TARGET"
+                chmod +x "$TARGET"
+                echo -e "${GREEN}✓ Installed prepare-commit-msg (commit messages with links to Claude sessions)${NC}"
             fi
 
             if [ "$INSTALL_POST_COMMIT" = true ]; then
                 SOURCE="$INSTALL_DIR/scripts/post-commit"
-                TARGET="$HOOK_DIR/post-commit"
+                TARGET="$GLOBAL_HOOKS_DIR/post-commit"
+                ln -sf "$SOURCE" "$TARGET"
+                chmod +x "$TARGET"
+                echo -e "${GREEN}✓ Installed post-commit (git notes with full text of Claude sessions)${NC}"
+            fi
 
-                if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
-                    echo -e "${YELLOW}⚠ post-commit hook already exists${NC}"
-                    read -p "$(echo -e ${YELLOW}"Overwrite? [y/N]: "${NC})" -n 1 -r
-                    echo ""
-                    if [[ $REPLY =~ ^[Yy]$ ]]; then
-                        ln -sf "$SOURCE" "$TARGET"
-                        chmod +x "$TARGET"
-                        echo -e "${GREEN}✓ Installed post-commit hook${NC}"
-                    fi
+            # Set global hooks path
+            CURRENT_HOOKS_PATH=$(git config --global --get core.hooksPath 2>/dev/null || echo "")
+            if [ -n "$CURRENT_HOOKS_PATH" ] && [ "$CURRENT_HOOKS_PATH" != "$GLOBAL_HOOKS_DIR" ]; then
+                echo ""
+                echo -e "${YELLOW}⚠ Git global core.hooksPath is already set to: $CURRENT_HOOKS_PATH${NC}"
+                read -p "$(echo -e ${YELLOW}"Replace with $GLOBAL_HOOKS_DIR? [y/N]: "${NC})" -n 1 -r
+                echo ""
+                if [[ $REPLY =~ ^[Yy]$ ]]; then
+                    git config --global core.hooksPath "$GLOBAL_HOOKS_DIR"
+                    echo -e "${GREEN}✓ Updated global hooks path${NC}"
                 else
-                    ln -sf "$SOURCE" "$TARGET"
-                    chmod +x "$TARGET"
-                    echo -e "${GREEN}✓ Installed post-commit hook${NC}"
+                    echo -e "${YELLOW}Skipped setting global hooks path${NC}"
+                    echo -e "${BLUE}To set manually: git config --global core.hooksPath $GLOBAL_HOOKS_DIR${NC}"
                 fi
+            else
+                git config --global core.hooksPath "$GLOBAL_HOOKS_DIR"
+                echo -e "${GREEN}✓ Set global hooks path${NC}"
             fi
 
             echo ""
-            echo -e "${BLUE}Git hooks installed to: $HOOK_DIR${NC}"
-            echo -e "${BLUE}To install in other repos, run:${NC}"
-            echo -e "  $INSTALL_DIR/scripts/install-git-hook.sh <repo-path>"
-        elif [ -z "$HOOK_INSTALL_PATH" ]; then
+            echo -e "${BLUE}Global hooks installed to: $GLOBAL_HOOKS_DIR${NC}"
+            echo -e "${BLUE}These hooks will apply to all git repositories${NC}"
+            if [ "$INSTALL_POST_COMMIT" = true ]; then
+                echo ""
+                echo -e "${BLUE}To disable git notes: export VIBE_CHECK_NOTES=0${NC}"
+            fi
+        fi
+
+        # Install local hooks (current directory)
+        if [ "$INSTALL_LOCAL" = true ]; then
+            if [ -d ".git" ]; then
+                HOOK_DIR=".git/hooks"
+                echo ""
+                echo -e "${BLUE}Installing hooks to current repository...${NC}"
+
+                if [ "$INSTALL_PREPARE_COMMIT" = true ]; then
+                    SOURCE="$INSTALL_DIR/scripts/prepare-commit-msg"
+                    TARGET="$HOOK_DIR/prepare-commit-msg"
+                    install_hook_with_chaining "$SOURCE" "$TARGET" "prepare-commit-msg"
+                fi
+
+                if [ "$INSTALL_POST_COMMIT" = true ]; then
+                    SOURCE="$INSTALL_DIR/scripts/post-commit"
+                    TARGET="$HOOK_DIR/post-commit"
+                    install_hook_with_chaining "$SOURCE" "$TARGET" "post-commit"
+                fi
+
+                echo ""
+                echo -e "${BLUE}Local hooks installed to: $HOOK_DIR${NC}"
+            else
+                echo -e "${RED}✗ Current directory is not a git repository${NC}"
+                echo -e "${BLUE}To install in a specific repo later:${NC}"
+                echo -e "  cd <repo> && $INSTALL_DIR/scripts/install-git-hook.sh"
+            fi
+        fi
+
+        # Show management commands
+        if [ "$INSTALL_GLOBAL" = true ] || [ "$INSTALL_LOCAL" = true ]; then
             echo ""
-            echo -e "${YELLOW}Skipped git hooks installation${NC}"
-            echo -e "${BLUE}To install later, run:${NC}"
-            echo -e "  $INSTALL_DIR/scripts/install-git-hook.sh <repo-path>"
+            echo -e "${BLUE}To manage git hooks:${NC}"
+            if [ "$RUNNING_FROM_REPO" = true ]; then
+                echo -e "  $INSTALL_DIR/vibe-check git status     # Check hook status"
+                echo -e "  $INSTALL_DIR/vibe-check git install    # Install to current repo"
+                echo -e "  $INSTALL_DIR/vibe-check git uninstall  # Remove from current repo"
+            else
+                echo -e "  vibe-check git status     # Check hook status"
+                echo -e "  vibe-check git install    # Install to current repo"
+                echo -e "  vibe-check git uninstall  # Remove from current repo"
+            fi
         else
-            echo -e "${RED}✗ Not a valid git repository: $HOOK_INSTALL_PATH${NC}"
-            echo -e "${BLUE}To install later, run:${NC}"
-            echo -e "  $INSTALL_DIR/scripts/install-git-hook.sh <repo-path>"
+            echo ""
+            echo -e "${YELLOW}Git integration skipped${NC}"
+            echo -e "${BLUE}To install later:${NC}"
+            if [ "$RUNNING_FROM_REPO" = true ]; then
+                echo -e "  $INSTALL_DIR/vibe-check git install [--global]"
+            else
+                echo -e "  vibe-check git install [--global]"
+            fi
         fi
     else
         echo ""
         echo -e "${YELLOW}Git integration skipped${NC}"
-        echo -e "${BLUE}To install later, run:${NC}"
-        echo -e "  $INSTALL_DIR/scripts/install-git-hook.sh <repo-path>"
+        echo -e "${BLUE}To install later:${NC}"
+        if [ "$RUNNING_FROM_REPO" = true ]; then
+            echo -e "  $INSTALL_DIR/vibe-check git install [--global]"
+        else
+            echo -e "  vibe-check git install [--global]"
+        fi
     fi
 fi
 

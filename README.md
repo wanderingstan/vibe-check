@@ -1,8 +1,30 @@
-# 🧜 Vibe-Check Claude Code Conversation Monitor
+# 🧜 Vibe-Check
 
-Monitors Claude Code conversation files and backs them up to a local SQLite database, and optionally sends them to the a remote server for storage.
+> Turn your Claude Code conversations into queryable, shareable data
 
-New skills in Claude code then allow you to reference and analyze your past converstaions from within Claude!
+**Vibe-Check** monitors your Claude Code conversations and stores them in a local SQLite database with optional remote sync. Use powerful MCP tools to search, analyze, and share your AI development sessions.
+
+## Why Vibe-Check?
+
+### 📦 Local SQLite Archive
+Every message stored locally in SQLite. Query your conversation history with SQL. Full database access for power users.
+
+### 🔍 MCP Introspection
+Eight MCP tools let Claude analyze its own conversation history. Ask "What did we talk about last week?" or "Show me sessions where we discussed agents."
+
+### 🔗 Granular Sharing
+Share specific conversations, sessions, or repositories. Custom URLs, expiration dates, and access control. Multiple export formats.
+
+### 🏷️ Git Provenance
+Track which conversations led to which code changes. Link sessions to commits. Filter conversations by repository.
+
+### 🏆 Community Leaderboard
+See how your usage compares to other developers. Public aggregate stats and rankings updated daily.
+
+### 🔒 Privacy-First
+Automatic detection and redaction of API keys, tokens, and credentials before data leaves your machine. Built on the `detect-secrets` library.
+
+---
 
 ## Installation
 
@@ -91,6 +113,52 @@ curl -fsSL https://raw.githubusercontent.com/wanderingstan/vibe-check/main/scrip
 ```
 
 This removes the installation and stops any running processes. Your server account remains active.
+
+## Development & Testing
+
+### Running Tests
+
+Three ways to test vibe-check installation:
+
+**1. VM Testing (recommended for clean environment):**
+```bash
+brew install cirruslabs/cli/tart  # One-time setup
+./tests/vm-test.sh                # Test in clean macOS VM
+```
+
+**2. Physical Mac Testing (via SSH):**
+```bash
+./tests/test-remote.sh --mock-claude testuser@mac-mini
+```
+
+**3. Local Testing (quick validation):**
+```bash
+./tests/quick-test.sh             # Fast checks
+./tests/test-install.sh           # Full suite
+```
+
+The test suite automatically:
+- Backs up existing installation
+- Tests fresh install and updates
+- Validates all components (DB, skills, config)
+- Tests daemon start/stop
+- Validates event monitoring end-to-end
+- Restores your original setup
+
+See [tests/TESTING_OPTIONS.md](tests/TESTING_OPTIONS.md) for detailed comparison of testing approaches.
+
+### Testing Local Changes
+
+When developing locally, always use direct Python invocation to test your changes:
+
+```bash
+# Run local code (NOT the installed Homebrew version)
+python3 vibe-check.py
+python3 vibe-check.py --skip-backlog
+
+# The vibe-check command runs the INSTALLED version, not your local changes
+# vibe-check start  # ← Don't use this when testing local changes
+```
 
 ## Architecture
 

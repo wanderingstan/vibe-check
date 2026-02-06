@@ -1645,22 +1645,104 @@ def check_claude_skills():
     print()
 
 
+def update_global_git_hooks_if_needed():
+    """Auto-update global git hooks to latest version if configured.
+
+    This runs silently on startup. If global git hooks are configured
+    (git config --global core.hooksPath), validates that symlinks point
+    to the current installation and updates them if needed.
+
+    Only prints a message if an update was actually performed.
+    """
+    try:
+        # Check if global hooks are configured
+        hooks_path = subprocess.run(
+            ["git", "config", "--global", "--get", "core.hooksPath"],
+            capture_output=True,
+            text=True,
+            check=False
+        ).stdout.strip()
+
+        if not hooks_path:
+            # Global hooks not configured, nothing to do
+            return
+
+        global_hooks_dir = Path(hooks_path).expanduser()
+
+        # Only auto-update if it's the vibe-check hooks directory
+        if not (global_hooks_dir == Path.home() / ".vibe-check" / "git-hooks"):
+            return
+
+        if not global_hooks_dir.exists():
+            # Hooks directory doesn't exist, skip
+            return
+
+        # Find current installation's hook sources
+        script_dir = Path(__file__).parent / "scripts"
+        source_hooks = {
+            "prepare-commit-msg": script_dir / "prepare-commit-msg",
+            "post-commit": script_dir / "post-commit"
+        }
+
+        # Check if any hooks need updating
+        needs_update = False
+        for hook_name, source_hook in source_hooks.items():
+            if not source_hook.exists():
+                continue
+
+            target_hook = global_hooks_dir / hook_name
+
+            # Check if hook is missing, broken, or points to wrong location
+            if not target_hook.exists():
+                needs_update = True
+                break
+
+            if target_hook.is_symlink():
+                resolved = target_hook.resolve()
+                if resolved != source_hook.resolve():
+                    # Symlink points to different location (old installation)
+                    needs_update = True
+                    break
+            else:
+                # Not a symlink - could be outdated copy
+                needs_update = True
+                break
+
+        if not needs_update:
+            # All hooks are up to date
+            return
+
+        # Update hooks
+        updated_hooks = []
+        for hook_name, source_hook in source_hooks.items():
+            if not source_hook.exists():
+                continue
+
+            target_hook = global_hooks_dir / hook_name
+
+            # Remove existing hook (file or symlink)
+            if target_hook.exists() or target_hook.is_symlink():
+                target_hook.unlink()
+
+            # Create fresh symlink
+            target_hook.symlink_to(source_hook)
+            target_hook.chmod(0o755)
+            updated_hooks.append(hook_name)
+
+        if updated_hooks:
+            logger.info(f"✓ Updated global git hooks to latest version ({', '.join(updated_hooks)})")
+
+    except Exception as e:
+        # Silent failure - don't interrupt startup for hook updates
+        logger.debug(f"Failed to auto-update global git hooks: {e}")
+
+
 def check_git_hooks():
     """Check if git hooks are installed and prompt to install if not.
 
-    Only prompts if:
-    1. We're in a git repository
-    2. Hooks are not yet installed
-    3. The install script is available
+    Offers global installation (all repos) or local installation (current repo).
+    Only prompts if install script is available.
     """
-    # Check if we're in a git repo
-    cwd = Path.cwd()
-    hooks_dir = cwd / ".git" / "hooks"
-
-    if not hooks_dir.exists():
-        # Not a git repo, skip silently
-        return
-
     # Check if install script is available
     script_dir = Path(__file__).parent
     install_script = script_dir / "scripts" / "install-git-hook.sh"
@@ -1669,25 +1751,31 @@ def check_git_hooks():
         # Installer not available
         return
 
-    # Check current hook status
-    prepare_hook = hooks_dir / "prepare-commit-msg"
-    post_hook = hooks_dir / "post-commit"
+    # Check global hooks status
+    git_status = check_git_hooks_status()
+    global_configured = git_status["global_configured"]
+    global_hooks = git_status.get("global_hooks", {})
 
-    prepare_installed = False
-    post_installed = False
+    # Check if we're in a git repo for local hooks
+    cwd = Path.cwd()
+    hooks_dir = cwd / ".git" / "hooks"
+    in_git_repo = hooks_dir.exists()
 
-    if prepare_hook.exists() and prepare_hook.is_symlink():
-        target = prepare_hook.resolve()
-        if "vibe-check" in str(target):
-            prepare_installed = True
+    # Determine if anything needs to be installed
+    global_needs_install = not global_configured or not all(
+        status == "installed" for status in global_hooks.values()
+    )
 
-    if post_hook.exists() and post_hook.is_symlink():
-        target = post_hook.resolve()
-        if "vibe-check" in str(target):
-            post_installed = True
+    local_needs_install = False
+    if in_git_repo:
+        cwd_hooks = git_status.get("cwd_hooks", {})
+        local_needs_install = not all(
+            status in ("installed", "installed_chained")
+            for status in cwd_hooks.values()
+        )
 
-    # If both hooks are already installed, nothing to do
-    if prepare_installed and post_installed:
+    # If everything is installed, nothing to do
+    if not global_needs_install and not local_needs_install:
         return
 
     # Hooks are missing - prompt user
@@ -1699,42 +1787,110 @@ def check_git_hooks():
     print("  2. Attaching full conversation transcripts as git notes")
     print()
 
-    if not prepare_installed:
-        print("  ❌ Commit message enhancement: Not installed")
-    else:
-        print("  ✅ Commit message enhancement: Installed")
+    # Show global status
+    print("Global hooks (all repos):")
+    if global_configured and global_hooks:
+        prepare_installed = global_hooks.get("prepare-commit-msg") == "installed"
+        post_installed = global_hooks.get("post-commit") == "installed"
 
-    if not post_installed:
-        print("  ❌ Git notes (transcripts):    Not installed")
+        if prepare_installed:
+            print("  ✅ Commit message enhancement: Installed")
+        else:
+            print("  ❌ Commit message enhancement: Not installed")
+
+        if post_installed:
+            print("  ✅ Git notes (transcripts):    Installed")
+        else:
+            print("  ❌ Git notes (transcripts):    Not installed")
     else:
-        print("  ✅ Git notes (transcripts):    Installed")
+        print("  ❌ Not configured")
+
+    # Show local status if in a git repo
+    if in_git_repo:
+        print(f"\nCurrent repo ({cwd.name}):")
+        cwd_hooks = git_status.get("cwd_hooks", {})
+        prepare_status = cwd_hooks.get("prepare-commit-msg", "not_installed")
+        post_status = cwd_hooks.get("post-commit", "not_installed")
+
+        if prepare_status in ("installed", "installed_chained"):
+            status_text = "Installed (chained)" if prepare_status == "installed_chained" else "Installed"
+            print(f"  ✅ Commit message enhancement: {status_text}")
+        else:
+            print("  ❌ Commit message enhancement: Not installed")
+
+        if post_status in ("installed", "installed_chained"):
+            status_text = "Installed (chained)" if post_status == "installed_chained" else "Installed"
+            print(f"  ✅ Git notes (transcripts):    {status_text}")
+        else:
+            print("  ❌ Git notes (transcripts):    Not installed")
 
     print()
-    print("Would you like to install git hooks for this repository? (y/n): ", end="", flush=True)
+    print("Would you like to install git hooks?")
+    if global_needs_install:
+        print("  [g] Global (all repos) - Recommended")
+    if in_git_repo and local_needs_install:
+        print("  [c] Current repo only")
+    if global_needs_install and in_git_repo and local_needs_install:
+        print("  [b] Both (global + current repo)")
+    print("  [n] No / Skip")
+    print()
+    print("Choice: ", end="", flush=True)
 
     try:
         response = input().strip().lower()
-        if response in ["y", "yes"]:
-            print("\nInstalling git hooks...")
+
+        install_global = False
+        install_local = False
+
+        if response == "g" and global_needs_install:
+            install_global = True
+        elif response == "c" and in_git_repo and local_needs_install:
+            install_local = True
+        elif response == "b" and global_needs_install and in_git_repo and local_needs_install:
+            install_global = True
+            install_local = True
+        elif response in ["n", "no", ""]:
+            print("\nSkipped. You can install git hooks later with:")
+            print("  vibe-check git install [--global]")
+            print("=" * 70)
+            print()
+            return
+        else:
+            print("\nInvalid choice. Skipping installation.")
+            print("=" * 70)
+            print()
+            return
+
+        # Install global hooks
+        if install_global:
+            print("\nInstalling global git hooks...")
+            result = subprocess.run(
+                [str(install_script), "--global"],
+                cwd=str(script_dir),
+                capture_output=False
+            )
+            if result.returncode == 0:
+                print("✅ Global git hooks installed!")
+
+        # Install local hooks
+        if install_local:
+            print("\nInstalling git hooks to current repository...")
             result = subprocess.run(
                 [str(install_script), str(cwd)],
                 cwd=str(script_dir),
                 capture_output=False
             )
             if result.returncode == 0:
-                print("\n✅ Git hooks installed successfully!")
-            else:
-                print("\n⚠️  Installation had some issues. You can install manually later:")
-                print(f"   {install_script} {cwd}")
-        else:
-            print("\nSkipped. You can install git hooks later by running:")
-            print(f"  {install_script} {cwd}")
-    except (EOFError, KeyboardInterrupt):
-        print("\n\nSkipped. You can install git hooks later by running:")
-        print(f"  {install_script} {cwd}")
+                print("✅ Local git hooks installed!")
 
-    print("=" * 70)
-    print()
+        print("\n" + "=" * 70)
+        print()
+
+    except (EOFError, KeyboardInterrupt):
+        print("\n\nSkipped. You can install git hooks later with:")
+        print("  vibe-check git install [--global]")
+        print("=" * 70)
+        print()
 
 
 def get_data_dir() -> Path:
@@ -2234,50 +2390,84 @@ def get_sqlite_db_path() -> Optional[Path]:
 
 def check_git_hooks_status() -> dict:
     """
-    Check the status of git hooks in common locations.
+    Check the status of git hooks (global and current repo).
 
     Returns dict with:
+        - global_configured: bool, whether global hooks path is set
+        - global_hooks_dir: Path to global hooks directory (if configured)
+        - global_hooks: dict of global hooks status
         - cwd_hooks: dict of hooks found in current directory (if git repo)
         - install_script: path to install script if available
     """
     result = {
+        "global_configured": False,
+        "global_hooks_dir": None,
+        "global_hooks": {},
         "cwd_hooks": {},
         "install_script": None
     }
+
+    # Check global git hooks configuration
+    try:
+        hooks_path = subprocess.run(
+            ["git", "config", "--global", "--get", "core.hooksPath"],
+            capture_output=True,
+            text=True,
+            check=False
+        ).stdout.strip()
+
+        if hooks_path:
+            global_hooks_dir = Path(hooks_path).expanduser()
+            result["global_configured"] = True
+            result["global_hooks_dir"] = global_hooks_dir
+
+            if global_hooks_dir.exists():
+                # Check global prepare-commit-msg
+                prepare_hook = global_hooks_dir / "prepare-commit-msg"
+                if prepare_hook.exists() and (
+                    (prepare_hook.is_symlink() and "vibe-check" in str(prepare_hook.resolve()))
+                    or not prepare_hook.is_symlink()
+                ):
+                    result["global_hooks"]["prepare-commit-msg"] = "installed"
+                else:
+                    result["global_hooks"]["prepare-commit-msg"] = "not_installed"
+
+                # Check global post-commit
+                post_hook = global_hooks_dir / "post-commit"
+                if post_hook.exists() and (
+                    (post_hook.is_symlink() and "vibe-check" in str(post_hook.resolve()))
+                    or not post_hook.is_symlink()
+                ):
+                    result["global_hooks"]["post-commit"] = "installed"
+                else:
+                    result["global_hooks"]["post-commit"] = "not_installed"
+    except Exception:
+        pass
 
     # Check if current directory is a git repo
     cwd = Path.cwd()
     hooks_dir = cwd / ".git" / "hooks"
 
     if hooks_dir.exists():
-        # Check for prepare-commit-msg
-        prepare_hook = hooks_dir / "prepare-commit-msg"
-        if prepare_hook.exists():
-            # Check if it's a symlink to our hook
-            if prepare_hook.is_symlink():
-                target = prepare_hook.resolve()
+        def check_hook(hook_path):
+            """Check hook status with chaining detection."""
+            if not hook_path.exists():
+                return "not_installed"
+            if hook_path.is_symlink():
+                target = hook_path.resolve()
                 if "vibe-check" in str(target):
-                    result["cwd_hooks"]["prepare-commit-msg"] = "installed"
+                    # Check for chained hook
+                    local_hook = hook_path.with_suffix('.local')
+                    if local_hook.exists():
+                        return "installed_chained"
+                    return "installed"
                 else:
-                    result["cwd_hooks"]["prepare-commit-msg"] = "other"
+                    return "other"
             else:
-                result["cwd_hooks"]["prepare-commit-msg"] = "other"
-        else:
-            result["cwd_hooks"]["prepare-commit-msg"] = "not_installed"
+                return "other"
 
-        # Check for post-commit
-        post_hook = hooks_dir / "post-commit"
-        if post_hook.exists():
-            if post_hook.is_symlink():
-                target = post_hook.resolve()
-                if "vibe-check" in str(target):
-                    result["cwd_hooks"]["post-commit"] = "installed"
-                else:
-                    result["cwd_hooks"]["post-commit"] = "other"
-            else:
-                result["cwd_hooks"]["post-commit"] = "other"
-        else:
-            result["cwd_hooks"]["post-commit"] = "not_installed"
+        result["cwd_hooks"]["prepare-commit-msg"] = check_hook(hooks_dir / "prepare-commit-msg")
+        result["cwd_hooks"]["post-commit"] = check_hook(hooks_dir / "post-commit")
 
     # Check if install script is available
     install_dir = Path(__file__).parent
@@ -2629,38 +2819,59 @@ def cmd_status(args):
     print("\n🔗 Git integration:")
     git_status = check_git_hooks_status()
 
+    # Show global hooks status
+    if git_status["global_configured"]:
+        print(f"   Global ({git_status['global_hooks_dir']}):")
+        if git_status["global_hooks"]:
+            prepare_status = git_status["global_hooks"].get("prepare-commit-msg", "not_installed")
+            post_status = git_status["global_hooks"].get("post-commit", "not_installed")
+
+            if prepare_status == "installed":
+                print("      Commit messages: ✅ Enabled")
+            else:
+                print("      Commit messages: ❌ Not installed")
+
+            if post_status == "installed":
+                print("      Git notes:       ✅ Enabled")
+            else:
+                print("      Git notes:       ❌ Not installed")
+        else:
+            print("      ⚠️  Hooks directory not found")
+    else:
+        print("   Global: ❌ Not configured")
+        print("      To install: vibe-check git install --global")
+
+    # Show current repo hooks status
     if git_status["cwd_hooks"]:
-        # We're in a git repo, show status of hooks in current directory
+        cwd = Path.cwd()
+        print(f"   Current repo ({cwd.name}):")
+
         prepare_status = git_status["cwd_hooks"].get("prepare-commit-msg", "not_installed")
         post_status = git_status["cwd_hooks"].get("post-commit", "not_installed")
 
-        if prepare_status == "installed":
-            print("   Commit messages: ✅ Enabled")
-        elif prepare_status == "other":
-            print("   Commit messages: ⚠️  Other hook installed")
-        else:
-            print("   Commit messages: ❌ Not installed")
+        def format_status(status):
+            if status == "installed":
+                return "✅ Enabled"
+            elif status == "installed_chained":
+                return "✅ Enabled (chained)"
+            elif status == "other":
+                return "⚠️  Other hook installed"
+            else:
+                return "❌ Not installed"
 
-        if post_status == "installed":
-            print("   Git notes:       ✅ Enabled")
-        elif post_status == "other":
-            print("   Git notes:       ⚠️  Other hook installed")
-        else:
-            print("   Git notes:       ❌ Not installed")
+        print(f"      Commit messages: {format_status(prepare_status)}")
+        print(f"      Git notes:       {format_status(post_status)}")
 
         # Show install instructions if not all hooks are installed
-        if prepare_status != "installed" or post_status != "installed":
-            if git_status["install_script"]:
-                print(f"   To install:      {git_status['install_script']} .")
-            else:
-                print("   To install:      vibe-check (re-run installer)")
+        if prepare_status not in ("installed", "installed_chained") or \
+           post_status not in ("installed", "installed_chained"):
+            print("      To install:      vibe-check git install")
     else:
         # Not in a git repo
-        print("   Not in a git repository")
-        if git_status["install_script"]:
-            print(f"   To install:      cd <repo> && {git_status['install_script']} .")
-        else:
-            print("   To install:      Run from a git repo")
+        print("   Current repo: Not in a git repository")
+
+    # Show management command
+    print("\n   Manage hooks:    vibe-check git status")
 
 
 def cmd_uninstall(args):
@@ -2955,6 +3166,192 @@ Please be proactive about reading relevant files and suggesting fixes."""
         print(f"❌ Error launching Claude Code: {e}")
 
 
+def cmd_git_install(args):
+    """Install git hooks to current repo or globally."""
+    install_script = Path(__file__).parent / "scripts" / "install-git-hook.sh"
+
+    if not install_script.exists():
+        print("❌ Install script not found")
+        print(f"   Expected: {install_script}")
+        return
+
+    # Build command arguments
+    cmd_args = [str(install_script)]
+
+    if args.global_install:
+        cmd_args.append("--global")
+
+    if hasattr(args, 'no_notes') and args.no_notes:
+        cmd_args.append("--no-notes")
+
+    if hasattr(args, 'path') and args.path:
+        cmd_args.append(args.path)
+
+    # Run install script
+    result = subprocess.run(cmd_args)
+    sys.exit(result.returncode)
+
+
+def cmd_git_uninstall(args):
+    """Uninstall git hooks from current repo or globally."""
+    if args.global_install:
+        # Remove global hooks
+        global_hooks_dir = Path.home() / ".vibe-check" / "git-hooks"
+        hooks_path = subprocess.run(
+            ["git", "config", "--global", "--get", "core.hooksPath"],
+            capture_output=True,
+            text=True
+        ).stdout.strip()
+
+        if hooks_path == str(global_hooks_dir):
+            print("🗑️  Removing global git hooks...")
+            # Unset global hooks path
+            subprocess.run(["git", "config", "--global", "--unset", "core.hooksPath"])
+            print("✅ Removed global hooks configuration")
+
+            # Optionally remove the hooks directory
+            if global_hooks_dir.exists():
+                print(f"\n📁 Global hooks directory still exists: {global_hooks_dir}")
+                print("   You can manually delete it if desired")
+        else:
+            print("⚠️  Global hooks path is not set to vibe-check")
+            if hooks_path:
+                print(f"   Current path: {hooks_path}")
+    else:
+        # Remove from current repo
+        cwd = Path.cwd()
+        hooks_dir = cwd / ".git" / "hooks"
+
+        if not hooks_dir.exists():
+            print("❌ Not a git repository")
+            return
+
+        print("🗑️  Removing git hooks from current repository...")
+
+        removed_any = False
+        for hook_name in ["prepare-commit-msg", "post-commit"]:
+            hook_path = hooks_dir / hook_name
+            if hook_path.exists() and hook_path.is_symlink():
+                target = hook_path.resolve()
+                if "vibe-check" in str(target):
+                    hook_path.unlink()
+                    print(f"✅ Removed {hook_name}")
+                    removed_any = True
+
+                    # Restore .local version if it exists
+                    local_hook = hooks_dir / f"{hook_name}.local"
+                    if local_hook.exists():
+                        local_hook.rename(hook_path)
+                        print(f"   Restored {hook_name}.local as {hook_name}")
+
+        if not removed_any:
+            print("ℹ️  No vibe-check hooks found in current repository")
+
+
+def cmd_git_status(args):
+    """Show git hooks status (global and current repo)."""
+    print("\033[1m🔗 Git Integration Status\033[0m")
+    print("")
+
+    # Check global configuration
+    print("🌍 Global configuration:")
+    hooks_path = subprocess.run(
+        ["git", "config", "--global", "--get", "core.hooksPath"],
+        capture_output=True,
+        text=True
+    ).stdout.strip()
+
+    if hooks_path:
+        global_hooks_dir = Path(hooks_path).expanduser()
+        print(f"   Hooks path: {global_hooks_dir}")
+
+        if global_hooks_dir.exists():
+            # Check which hooks are installed
+            prepare_hook = global_hooks_dir / "prepare-commit-msg"
+            post_hook = global_hooks_dir / "post-commit"
+
+            prepare_installed = prepare_hook.exists() and (
+                prepare_hook.is_symlink() and "vibe-check" in str(prepare_hook.resolve())
+                or not prepare_hook.is_symlink()
+            )
+            post_installed = post_hook.exists() and (
+                post_hook.is_symlink() and "vibe-check" in str(post_hook.resolve())
+                or not post_hook.is_symlink()
+            )
+
+            if prepare_installed:
+                print("   Commit messages: ✅ Enabled")
+            else:
+                print("   Commit messages: ❌ Not installed")
+
+            if post_installed:
+                print("   Git notes:       ✅ Enabled")
+            else:
+                print("   Git notes:       ❌ Not installed")
+        else:
+            print("   ⚠️  Hooks directory does not exist")
+    else:
+        print("   ❌ Not configured")
+        print("   To install: vibe-check git install --global")
+
+    # Check current repo
+    print("\n📁 Current repository:")
+    cwd = Path.cwd()
+    hooks_dir = cwd / ".git" / "hooks"
+
+    if hooks_dir.exists():
+        print(f"   Repository: {cwd.name}")
+
+        # Check hooks
+        prepare_hook = hooks_dir / "prepare-commit-msg"
+        post_hook = hooks_dir / "post-commit"
+
+        def check_hook(hook_path):
+            if not hook_path.exists():
+                return "not_installed"
+            if hook_path.is_symlink():
+                target = hook_path.resolve()
+                if "vibe-check" in str(target):
+                    # Check for chained hook
+                    local_hook = hook_path.with_suffix('.local')
+                    if local_hook.exists():
+                        return "installed_chained"
+                    return "installed"
+                else:
+                    return "other"
+            else:
+                return "other"
+
+        prepare_status = check_hook(prepare_hook)
+        post_status = check_hook(post_hook)
+
+        if prepare_status == "installed":
+            print("   Commit messages: ✅ Enabled")
+        elif prepare_status == "installed_chained":
+            print("   Commit messages: ✅ Enabled (chained)")
+        elif prepare_status == "other":
+            print("   Commit messages: ⚠️  Other hook installed")
+        else:
+            print("   Commit messages: ❌ Not installed")
+
+        if post_status == "installed":
+            print("   Git notes:       ✅ Enabled")
+        elif post_status == "installed_chained":
+            print("   Git notes:       ✅ Enabled (chained)")
+        elif post_status == "other":
+            print("   Git notes:       ⚠️  Other hook installed")
+        else:
+            print("   Git notes:       ❌ Not installed")
+
+        # Show install command if not all hooks are installed
+        if prepare_status != "installed" and prepare_status != "installed_chained" or \
+           post_status != "installed" and post_status != "installed_chained":
+            print("   To install:      vibe-check git install")
+    else:
+        print("   Not a git repository")
+        print("   Run from a git repo to see local status")
+
+
 def cmd_auth_login(args):
     """Authenticate with the vibe-check server using device flow."""
     # Load config to get API URL
@@ -3179,6 +3576,9 @@ def run_monitor(args):
     if not args.skip_skills_check:
         check_claude_skills()
 
+    # Auto-update global git hooks if configured
+    update_global_git_hooks_if_needed()
+
     # Check for git hooks (unless skipped)
     if not args.skip_skills_check:
         check_git_hooks()
@@ -3343,6 +3743,48 @@ Examples:
         "uninstall", help="Remove vibe-check data and Claude Code skills"
     )
     parser_uninstall.set_defaults(func=cmd_uninstall)
+
+    # Git command with subcommands
+    parser_git = subparsers.add_parser("git", help="Git integration commands")
+    git_subparsers = parser_git.add_subparsers(
+        dest="git_command", help="Git command"
+    )
+
+    # git install
+    parser_git_install = git_subparsers.add_parser(
+        "install", help="Install git hooks to current repo or globally"
+    )
+    parser_git_install.add_argument(
+        "--global", dest="global_install", action="store_true",
+        help="Install hooks globally (all repos)"
+    )
+    parser_git_install.add_argument(
+        "--no-notes", dest="no_notes", action="store_true",
+        help="Skip git notes hook (only install commit messages)"
+    )
+    parser_git_install.add_argument(
+        "path", nargs="?", help="Repository path (default: current directory)"
+    )
+    parser_git_install.set_defaults(func=cmd_git_install)
+
+    # git uninstall
+    parser_git_uninstall = git_subparsers.add_parser(
+        "uninstall", help="Remove git hooks from current repo or globally"
+    )
+    parser_git_uninstall.add_argument(
+        "--global", dest="global_install", action="store_true",
+        help="Remove global hooks"
+    )
+    parser_git_uninstall.set_defaults(func=cmd_git_uninstall)
+
+    # git status
+    parser_git_status = git_subparsers.add_parser(
+        "status", help="Show git hooks status (global and current repo)"
+    )
+    parser_git_status.set_defaults(func=cmd_git_status)
+
+    # Default for 'git' with no subcommand
+    parser_git.set_defaults(func=cmd_git_status)
 
     # Auth command with subcommands
     parser_auth = subparsers.add_parser("auth", help="Authentication commands")
