@@ -254,8 +254,11 @@ if [ -d "$INSTALL_DIR" ]; then
         # Copy all files except venv, config, and database to preserve user data
         for item in "$LOCAL_SOURCE_DIR"/*; do
             basename_item=$(basename "$item")
-            if [ "$basename_item" != "venv" ] && [ "$basename_item" != "config.json" ] && [ "$basename_item" != "vibe_check.db" ]; then
-                cp -r "$item" "$INSTALL_DIR"/
+            # Skip venv directories, config, database, and build artifacts
+            if [[ "$basename_item" != "venv" && "$basename_item" != ".venv" && \
+                  "$basename_item" != "config.json" && "$basename_item" != "vibe_check.db" && \
+                  "$basename_item" != "__pycache__" && "$basename_item" != ".git" ]]; then
+                cp -r "$item" "$INSTALL_DIR"/ 2>/dev/null || true
             fi
         done
         echo -e "${GREEN}✓ Files updated from local directory${NC}"
@@ -372,7 +375,16 @@ if [ ! -d "$INSTALL_DIR/venv" ]; then
         mkdir -p "$INSTALL_DIR"
 
         echo -e "${BLUE}Copying files from local directory...${NC}"
-        cp -r "$LOCAL_SOURCE_DIR"/* "$INSTALL_DIR"/
+        # Copy files, excluding virtual environments and other build artifacts
+        for item in "$LOCAL_SOURCE_DIR"/*; do
+            basename_item=$(basename "$item")
+            # Skip venv directories, Python cache, and build artifacts
+            if [[ "$basename_item" != "venv" && "$basename_item" != ".venv" && \
+                  "$basename_item" != "__pycache__" && "$basename_item" != "*.pyc" && \
+                  "$basename_item" != ".git" ]]; then
+                cp -r "$item" "$INSTALL_DIR"/ 2>/dev/null || true
+            fi
+        done
         echo -e "${GREEN}✓ Files copied${NC}"
     else
         # Clone from GitHub
