@@ -41,7 +41,7 @@ LOG_BACKUP_COUNT = 3  # Keep 3 rotated files (.log.1, .log.2, .log.3)
 logger = logging.getLogger("vibe-check")
 
 # Version
-VERSION = "1.1.11"
+VERSION = "1.1.12"
 
 # Default production API URL
 DEFAULT_API_URL = "https://vibecheck.wanderingstan.com/api"
