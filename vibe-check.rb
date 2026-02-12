@@ -72,6 +72,10 @@ class VibeCheck < Formula
     # Make vibe-check.py executable
     chmod 0755, libexec/"vibe-check.py"
 
+    # Install MCP server to share directory
+    (share/"vibe-check/mcp-server").install Dir["mcp-server/*.py"]
+    (share/"vibe-check/mcp-server").install "mcp-server/requirements.txt" if File.exist?("mcp-server/requirements.txt")
+
     # Install skills to share directory (each skill is a directory with SKILL.md)
     (share/"vibe-check/skills").install Dir["skills/vibe-check-*"]
 

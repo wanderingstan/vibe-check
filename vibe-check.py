@@ -1474,59 +1474,201 @@ def is_mcp_plugin_installed() -> bool:
         return False
 
 
-def check_mcp_plugin():
+def install_mcp_server():
+    """Install MCP server files and create virtualenv.
+
+    Returns:
+        Path to the MCP server directory, or None if installation failed
+    """
+    import shutil
+
+    # Find source MCP server files
+    # Check Homebrew location first
+    homebrew_mcp = Path("/opt/homebrew/share/vibe-check/mcp-server")
+    if homebrew_mcp.exists():
+        mcp_source = homebrew_mcp
+    else:
+        # Check if we're in the vibe-check directory
+        repo_mcp = Path(__file__).parent / "mcp-server"
+        if repo_mcp.exists():
+            mcp_source = repo_mcp
+        else:
+            logger.error("MCP server source files not found")
+            return None
+
+    # Install to ~/.vibe-check/mcp-server/
+    mcp_dest = Path.home() / ".vibe-check" / "mcp-server"
+    mcp_dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Copy MCP server files
+    try:
+        if mcp_dest.exists():
+            # Update existing installation
+            for item in mcp_source.glob("*.py"):
+                shutil.copy2(item, mcp_dest)
+            # Copy requirements.txt if it exists
+            req_file = mcp_source / "requirements.txt"
+            if req_file.exists():
+                shutil.copy2(req_file, mcp_dest)
+        else:
+            # Fresh install - copy everything except .venv
+            shutil.copytree(
+                mcp_source,
+                mcp_dest,
+                ignore=shutil.ignore_patterns('.venv', '__pycache__', '*.pyc')
+            )
+    except Exception as e:
+        logger.error(f"Failed to copy MCP server files: {e}")
+        return None
+
+    # Create virtualenv at ~/.vibe-check/mcp-server/.venv
+    venv_dir = mcp_dest / ".venv"
+    if not venv_dir.exists():
+        print("   Creating Python virtual environment...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "venv", str(venv_dir)],
+                check=True,
+                capture_output=True,
+                text=True
+            )
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to create virtualenv: {e.stderr}")
+            return None
+
+    # Install MCP package
+    pip_path = venv_dir / "bin" / "pip"
+    if not pip_path.exists():
+        logger.error(f"pip not found at {pip_path}")
+        return None
+
+    print("   Installing MCP dependencies...")
+    try:
+        # Upgrade pip
+        subprocess.run(
+            [str(pip_path), "install", "--quiet", "--upgrade", "pip"],
+            check=True,
+            capture_output=True
+        )
+        # Install mcp package
+        subprocess.run(
+            [str(pip_path), "install", "--quiet", "mcp"],
+            check=True,
+            capture_output=True
+        )
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install MCP dependencies: {e}")
+        return None
+
+    return mcp_dest
+
+
+def register_mcp_in_claude_json(mcp_dir: Path):
+    """Register MCP server in ~/.claude.json.
+
+    Args:
+        mcp_dir: Path to the MCP server directory
+
+    Returns:
+        True if successful, False otherwise
+    """
+    claude_json = Path.home() / ".claude.json"
+    venv_python = mcp_dir / ".venv" / "bin" / "python"
+    server_py = mcp_dir / "server.py"
+
+    # Ensure files exist
+    if not venv_python.exists() or not server_py.exists():
+        logger.error(f"MCP server files not found: {venv_python} or {server_py}")
+        return False
+
+    # Create or update ~/.claude.json
+    if claude_json.exists():
+        try:
+            with open(claude_json, "r") as f:
+                config = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to read {claude_json}: {e}")
+            return False
+    else:
+        config = {}
+
+    # Ensure mcpServers section exists
+    if "mcpServers" not in config:
+        config["mcpServers"] = {}
+
+    # Add/update vibe-check MCP server
+    config["mcpServers"]["vibe-check"] = {
+        "type": "stdio",
+        "command": str(venv_python),
+        "args": [str(server_py)],
+        "env": {
+            "VIBE_CHECK_DB": str(Path.home() / ".vibe-check" / "vibe_check.db"),
+            "VIBE_CHECK_CONFIG": str(Path.home() / ".vibe-check" / "config.json")
+        }
+    }
+
+    # Write back to file
+    try:
+        with open(claude_json, "w") as f:
+            json.dump(config, f, indent=2)
+        return True
+    except IOError as e:
+        logger.error(f"Failed to write {claude_json}: {e}")
+        return False
+
+
+def check_mcp_plugin(interactive: bool = True):
     """Check if MCP plugin is installed and auto-install if not.
 
     The MCP plugin provides structured tool interfaces for Claude Code,
     enabling commands like /stats, /search, /share etc.
+
+    Args:
+        interactive: If False, install silently without banner
     """
     if is_mcp_plugin_installed():
         return  # Already installed
 
-    # Find the plugin installer
-    # First check Homebrew location
-    homebrew_installer = Path(
-        "/opt/homebrew/share/vibe-check/scripts/install-plugin.sh"
-    )
-    if homebrew_installer.exists():
-        installer_path = homebrew_installer
-        script_dir = homebrew_installer.parent.parent
-    else:
-        # Check if we're in the vibe-check directory
-        script_dir = Path(__file__).parent
-        installer_path = script_dir / "scripts" / "install-plugin.sh"
-
-    if not installer_path.exists():
-        # Installer not available
-        logger.debug(f"Plugin installer not found at {installer_path}")
-        return
-
-    # Auto-install the MCP plugin
-    print("\n" + "=" * 70)
-    print("🔌 Installing Claude Code MCP Plugin...")
-    print("=" * 70)
-    print("\nThis enables structured commands like /stats, /search, /share")
-    print("and natural language queries about your conversation history.\n")
+    # Show banner only if interactive
+    if interactive:
+        print("\n" + "=" * 70)
+        print("🔌 Installing Claude Code MCP Plugin...")
+        print("=" * 70)
+        print("\nThis enables structured commands like /stats, /search, /share")
+        print("and natural language queries about your conversation history.\n")
 
     try:
-        result = subprocess.run(
-            ["bash", str(installer_path)],
-            cwd=str(script_dir),
-            capture_output=False,
-        )
-        if result.returncode == 0:
+        # Step 1: Install MCP server files and create virtualenv
+        mcp_dir = install_mcp_server()
+        if not mcp_dir:
+            if interactive:
+                print("\n⚠️  Failed to install MCP server files")
+            return
+
+        # Step 2: Register in ~/.claude.json
+        print("   Registering MCP server in Claude Code...")
+        if not register_mcp_in_claude_json(mcp_dir):
+            if interactive:
+                print("\n⚠️  Failed to register MCP server in ~/.claude.json")
+            return
+
+        # Step 3: Install skills (reuse existing logic)
+        check_claude_skills()
+
+        if interactive:
             print("\n✅ MCP plugin installed successfully!")
             print("   Restart Claude Code to use the new commands.")
+            print("=" * 70)
+            print()
         else:
-            print("\n⚠️  Plugin installation had issues.")
-            print(f"   You can install manually: {installer_path}")
+            logger.info("MCP plugin installed successfully")
+
     except Exception as e:
         logger.warning(f"Could not install MCP plugin: {e}")
-        print(f"\n⚠️  Could not install MCP plugin: {e}")
-        print(f"   You can install manually: {installer_path}")
-
-    print("=" * 70)
-    print()
+        if interactive:
+            print(f"\n⚠️  Could not install MCP plugin: {e}")
+            print("=" * 70)
+            print()
 
 
 def check_claude_skills():
