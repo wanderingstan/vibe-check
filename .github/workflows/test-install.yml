@@ -1,0 +1,76 @@
+name: Test Installation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test-macos:
+    name: Test on macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create mock Claude Code directory
+        run: |
+          mkdir -p ~/.claude/projects
+          echo "Mock Claude Code setup for testing"
+
+      - name: Run installation tests
+        run: |
+          chmod +x tests/test-install.sh
+          ./tests/test-install.sh --quick --verbose
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: /tmp/vibe-check-test-*.log
+          retention-days: 7
+
+  test-ubuntu:
+    name: Test on Ubuntu
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv sqlite3
+
+      - name: Create mock Claude Code directory
+        run: |
+          mkdir -p ~/.claude/projects
+          echo "Mock Claude Code setup for testing"
+
+      - name: Run installation tests
+        run: |
+          chmod +x tests/test-install.sh
+          ./tests/test-install.sh --quick --verbose
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-ubuntu
+          path: /tmp/vibe-check-test-*.log
+          retention-days: 7
