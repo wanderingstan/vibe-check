@@ -188,17 +188,27 @@ detect_os
 # Configuration
 REPO_URL="https://github.com/wanderingstan/vibe-check"
 
-# Check if we're running from within the git repo
+# Check if we're running from within the git repo or a local copy
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT_DIR=""
 RUNNING_FROM_REPO=false
+LOCAL_SOURCE_DIR=""
 
 if [ -n "$SCRIPT_DIR" ]; then
-    # Check if we're in a git repo with vibe-check.py at parent level
+    # Check if we're in a directory with vibe-check.py at parent level
     PARENT_DIR="$(dirname "$SCRIPT_DIR")"
-    if [ -f "$PARENT_DIR/vibe-check.py" ] && [ -d "$PARENT_DIR/.git" ]; then
-        RUNNING_FROM_REPO=true
-        INSTALL_DIR="$PARENT_DIR"
-        echo -e "${BLUE}Running from git repo: $INSTALL_DIR${NC}"
+    if [ -f "$PARENT_DIR/vibe-check.py" ] && [ -f "$PARENT_DIR/requirements.txt" ]; then
+        if [ -d "$PARENT_DIR/.git" ]; then
+            # Actual git repo - use it directly
+            RUNNING_FROM_REPO=true
+            INSTALL_DIR="$PARENT_DIR"
+            echo -e "${BLUE}Running from git repo: $INSTALL_DIR${NC}"
+        else
+            # Local directory (e.g., tarball) - copy to standard location
+            LOCAL_SOURCE_DIR="$PARENT_DIR"
+            INSTALL_DIR="$HOME/.vibe-check"
+            echo -e "${BLUE}Running from local directory: $LOCAL_SOURCE_DIR${NC}"
+            echo -e "${BLUE}Will install to: $INSTALL_DIR${NC}"
+        fi
     else
         INSTALL_DIR="$HOME/.vibe-check"
     fi
@@ -238,6 +248,17 @@ if [ -d "$INSTALL_DIR" ]; then
     # Update from git (skip if running from repo - user manages their own git)
     if [ "$RUNNING_FROM_REPO" = true ]; then
         echo -e "${GREEN}✓ Using repo directly (run 'git pull' to update)${NC}"
+    elif [ -n "$LOCAL_SOURCE_DIR" ]; then
+        # Copy updated files from local directory
+        echo -e "${BLUE}Updating files from local directory...${NC}"
+        # Copy all files except venv, config, and database to preserve user data
+        for item in "$LOCAL_SOURCE_DIR"/*; do
+            basename_item=$(basename "$item")
+            if [ "$basename_item" != "venv" ] && [ "$basename_item" != "config.json" ] && [ "$basename_item" != "vibe_check.db" ]; then
+                cp -r "$item" "$INSTALL_DIR"/
+            fi
+        done
+        echo -e "${GREEN}✓ Files updated from local directory${NC}"
     elif [ -d ".git" ]; then
         # Stash any local changes before pulling
         if ! git diff --quiet 2>/dev/null; then
@@ -341,8 +362,20 @@ if [ ! -d "$INSTALL_DIR/venv" ]; then
 
     echo -e "${GREEN}✓ All dependencies found${NC}"
 
-    # Clone repository (only if not running from repo)
-    if [ "$RUNNING_FROM_REPO" != true ]; then
+    # Get source files (clone from GitHub, copy from local dir, or use repo directly)
+    if [ "$RUNNING_FROM_REPO" = true ]; then
+        # Using git repo directly, no need to copy
+        :
+    elif [ -n "$LOCAL_SOURCE_DIR" ]; then
+        # Copy from local directory (e.g., tarball)
+        echo -e "${BLUE}Creating installation directory...${NC}"
+        mkdir -p "$INSTALL_DIR"
+
+        echo -e "${BLUE}Copying files from local directory...${NC}"
+        cp -r "$LOCAL_SOURCE_DIR"/* "$INSTALL_DIR"/
+        echo -e "${GREEN}✓ Files copied${NC}"
+    else
+        # Clone from GitHub
         echo -e "${BLUE}Creating installation directory...${NC}"
         mkdir -p "$INSTALL_DIR"
 
