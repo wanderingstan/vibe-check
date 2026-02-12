@@ -1181,9 +1181,6 @@ class ConversationMonitor(FileSystemEventHandler):
             events_batch = []
             final_line_number = last_line
 
-            # Get git info once for all events in this file
-            git_remote_url, git_commit_hash = get_git_info(file_path.parent)
-
             for idx, line in enumerate(new_lines):
                 line_number = last_line + idx + 1
                 final_line_number = line_number
@@ -1196,6 +1193,13 @@ class ConversationMonitor(FileSystemEventHandler):
                 try:
                     # Parse JSON
                     event_data = json.loads(line)
+
+                    # Get git info from the event's working directory
+                    git_remote_url = None
+                    git_commit_hash = None
+                    working_dir = event_data.get("cwd")
+                    if working_dir:
+                        git_remote_url, git_commit_hash = get_git_info(Path(working_dir))
 
                     # Redact secrets before storage
                     event_data = self.redact_secrets_from_event(event_data)
