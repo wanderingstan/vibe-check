@@ -206,20 +206,45 @@ When testing on a Mac Mini with a test user that doesn't have Claude Code:
 # without requiring a full Claude Code installation on the test account
 ```
 
-### Scenario 3: Release Testing
+### Scenario 4: Testing Homebrew Formula Changes
+
+```bash
+# 1. Update Homebrew formula
+vim Formula/vibe-check.rb  # Update version, URL, sha256, etc.
+
+# 2. Test local formula in clean VM
+./tests/vm-test-homebrew.sh --local
+
+# 3. If tests pass, push formula to tap
+git add Formula/vibe-check.rb
+git commit -m "Update formula to vX.X.X"
+git push
+
+# 4. Test published formula
+./tests/vm-test-homebrew.sh
+
+# 5. Tag release if all tests pass
+git tag vX.X.X
+git push --tags
+```
+
+### Scenario 5: Release Testing
 
 ```bash
 # 1. Run all local tests
 ./tests/quick-test.sh
 ./tests/test-install.sh --verbose
 
-# 2. Test on Mac Mini
+# 2. Test direct install in VM
+./tests/vm-test.sh
+
+# 3. Test on Mac Mini (optional - real hardware validation)
 ./tests/test-remote.sh user@mac-mini
 
-# 3. Test Homebrew installation (if applicable)
-# On Mac Mini: brew install wanderingstan/vibe-check/vibe-check
+# 4. Test Homebrew installation in VM
+./tests/vm-test-homebrew.sh
 
-# 4. Verify skills work in Claude Code
+# 5. Verify skills work in Claude Code
 # Open Claude Code and test skills
 ```
 

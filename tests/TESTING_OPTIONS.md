@@ -84,6 +84,39 @@ See: [Local Testing Guide](#local-testing)
 
 ---
 
+## 4. 🍺 Homebrew Testing (VM)
+
+**Best for:** Testing Homebrew formula, pre-release validation
+
+**Pros:**
+- Tests production Homebrew install path
+- Clean environment (VM-based)
+- Can test published or local formula
+- Validates `brew services` integration
+
+**Cons:**
+- Requires Apple Silicon Mac
+- ~25GB VM download (shared with vm-test.sh)
+- Slower than local testing
+
+**Note:** Tests the **Homebrew installation path**, which is different from direct `install.sh`. Uses same VM infrastructure as regular VM tests.
+
+**Setup:**
+```bash
+# Install Tart (one-time, shared with vm-test.sh)
+brew install cirruslabs/cli/tart
+
+# Test published formula
+./tests/vm-test-homebrew.sh
+
+# Test local formula (before publishing)
+./tests/vm-test-homebrew.sh --local
+```
+
+See: [Homebrew Testing Guide](#homebrew-testing)
+
+---
+
 # Detailed Guides
 
 ## Physical Mac Testing
@@ -267,18 +300,123 @@ Local tests automatically:
 
 ---
 
+## Homebrew Testing
+
+### Overview
+
+Tests the **production Homebrew installation path** in a clean macOS VM. This is different from direct `install.sh` testing - it validates how users install via `brew install vibe-check`.
+
+### Prerequisites
+
+```bash
+# Install Tart (same as VM testing)
+brew install cirruslabs/cli/tart
+```
+
+First run downloads ~25GB base image (shared with `vm-test.sh`).
+
+### Running Tests
+
+**Test published formula (what users get):**
+```bash
+./tests/vm-test-homebrew.sh
+```
+
+**Test local formula (before publishing):**
+```bash
+./tests/vm-test-homebrew.sh --local
+```
+
+**Quick tests only:**
+```bash
+./tests/vm-test-homebrew.sh --quick
+```
+
+**Set up VM without tests:**
+```bash
+./tests/vm-test-homebrew.sh --setup
+```
+
+**Debug in VM:**
+```bash
+./tests/vm-test-homebrew.sh --shell
+# Inside VM:
+eval "$(/opt/homebrew/bin/brew shellenv)"
+vibe-check status
+```
+
+**Clean up VM:**
+```bash
+./tests/vm-test-homebrew.sh --cleanup
+```
+
+### What Gets Tested
+
+- ✓ Homebrew package installation from tap
+- ✓ Proper Homebrew paths (Cellar, bin, share)
+- ✓ `brew services` integration (start/stop/status)
+- ✓ Data directory at `~/.vibe-check` (symlinked)
+- ✓ Config and database creation
+- ✓ Skills installation to `~/.claude/skills`
+- ✓ MCP server files in share directory
+- ✓ Daemon functionality
+- ✓ Database operations
+
+### Key Differences from Direct Install
+
+| Aspect | Homebrew | Direct Install |
+|--------|----------|----------------|
+| **Source** | Release tarball | Git repo |
+| **Code location** | `/opt/homebrew/Cellar/...` | `~/.vibe-check/` |
+| **Venv** | Homebrew libexec | `~/.vibe-check/venv` |
+| **Data** | `~/.vibe-check/` (symlinked) | `~/.vibe-check/` |
+| **Auto-start** | `brew services` | launchd/systemd |
+| **Updates** | `brew upgrade vibe-check` | `git pull` |
+
+**Note:** Both paths use the same `~/.vibe-check/` directory for data storage.
+
+### When to Use
+
+- ✅ Before releasing new Homebrew version
+- ✅ After updating `Formula/vibe-check.rb`
+- ✅ Before tagging releases
+- ✅ To validate production install path
+- ❌ During active development (use `vm-test.sh` instead)
+
+### Test Modes
+
+**Published formula mode (default):**
+- Tests what users actually get
+- Requires formula pushed to `wanderingstan/vibe-check` tap
+- Best for final release validation
+
+**Local formula mode (`--local`):**
+- Tests `Formula/vibe-check.rb` from your repo
+- No need to publish first
+- Best for testing formula changes pre-release
+
+### Advantages for Release Workflow
+
+1. Edit `Formula/vibe-check.rb` (version, URL, etc.)
+2. Test locally: `./tests/vm-test-homebrew.sh --local`
+3. Push formula to tap
+4. Test published: `./tests/vm-test-homebrew.sh`
+5. Tag release with confidence
+
+---
+
 # Comparison Matrix
 
-| Feature | Physical Mac | VM (Tart) | Local |
-|---------|-------------|-----------|-------|
-| **Clean environment** | ✅ | ✅✅ | ⚠️ |
-| **Speed** | ✅✅ | ✅ | ✅✅✅ |
-| **Setup complexity** | Medium | Low | None |
-| **Cost** | Hardware | Free | Free |
-| **CI/CD ready** | ❌ | ✅✅ | ✅ |
-| **Snapshot/rollback** | Manual | ✅✅ | ⚠️ |
-| **Parallel testing** | Limited | ✅✅ | ❌ |
-| **Real hardware validation** | ✅✅ | ⚠️ | ⚠️ |
+| Feature | Physical Mac | VM (install.sh) | Homebrew VM | Local |
+|---------|-------------|-----------------|-------------|-------|
+| **Clean environment** | ✅ | ✅✅ | ✅✅ | ⚠️ |
+| **Speed** | ✅✅ | ✅ | ✅ | ✅✅✅ |
+| **Setup complexity** | Medium | Low | Low | None |
+| **Cost** | Hardware | Free | Free | Free |
+| **CI/CD ready** | ❌ | ✅✅ | ✅✅ | ✅ |
+| **Snapshot/rollback** | Manual | ✅✅ | ✅✅ | ⚠️ |
+| **Tests production path** | ✅✅ | ⚠️ (repo) | ✅✅ (brew) | ⚠️ |
+| **Real hardware validation** | ✅✅ | ⚠️ | ⚠️ | ⚠️ |
 
 ---
 

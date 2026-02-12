@@ -4,19 +4,25 @@ Automated tests for the Vibe Check installation process.
 
 ## Testing Options
 
-You have **three ways** to test vibe-check installation:
+You have **four ways** to test vibe-check installation:
 
 1. **🔲 VM Testing** (recommended) - Clean macOS VM using Tart
    ```bash
    ./vm-test.sh
    ```
 
-2. **🖥️ Physical Mac** - Test on real Mac Mini via SSH
+2. **🍺 Homebrew VM Testing** - Test Homebrew installation in clean VM
+   ```bash
+   ./vm-test-homebrew.sh          # Test published formula
+   ./vm-test-homebrew.sh --local  # Test local formula
+   ```
+
+3. **🖥️ Physical Mac** - Test on real Mac Mini via SSH
    ```bash
    ./test-remote.sh --mock-claude testuser@mac-mini
    ```
 
-3. **💻 Local Testing** - Test on your development machine
+4. **💻 Local Testing** - Test on your development machine
    ```bash
    ./test-install.sh --mock-claude
    ```
@@ -39,6 +45,15 @@ brew install cirruslabs/cli/tart  # One-time setup
 **Full local test:**
 ```bash
 ./test-install.sh --mock-claude   # Full suite on your machine
+```
+
+**Homebrew testing:**
+```bash
+# Test published Homebrew formula
+./vm-test-homebrew.sh
+
+# Test local formula (before publishing)
+./vm-test-homebrew.sh --local
 ```
 
 ## What Gets Tested
@@ -189,12 +204,53 @@ To add a new test:
    run_test "Your Feature" test_your_feature
    ```
 
+## Homebrew Testing
+
+### Test Homebrew Installation in VM
+
+Test the production Homebrew install path (different from direct install.sh):
+
+```bash
+# Test published formula from tap (what users get)
+./vm-test-homebrew.sh
+
+# Test local formula file (before publishing)
+./vm-test-homebrew.sh --local
+
+# Quick tests only
+./vm-test-homebrew.sh --quick
+```
+
+**What's tested:**
+- ✓ Homebrew package installation
+- ✓ Proper paths (Cellar, bin, share)
+- ✓ `brew services` integration
+- ✓ Data directory and symlinks
+- ✓ Config and database
+- ✓ Skills and MCP server files
+
+**Key differences from direct install:**
+| Aspect | Homebrew | Direct Install |
+|--------|----------|----------------|
+| Code location | `/opt/homebrew/Cellar/...` | `~/.vibe-check/` |
+| Venv | Homebrew libexec | `~/.vibe-check/venv` |
+| Auto-start | `brew services` | launchd/systemd |
+| Updates | `brew upgrade` | `git pull` |
+
+### When to use Homebrew tests:
+- Before releasing new Homebrew version
+- After updating `Formula/vibe-check.rb`
+- Before tagging releases
+- To validate production install path
+
+See `tests/README.md` in root for detailed Homebrew testing documentation.
+
 ## Manual Testing Checklist
 
 For features not covered by automated tests:
 
 - [ ] Installation from curl command works
-- [ ] Homebrew installation works
+- [ ] Homebrew installation works (use `./vm-test-homebrew.sh`)
 - [ ] Skills appear correctly in Claude Code
 - [ ] Skills can be invoked via Claude
 - [ ] API sync works (requires auth)
