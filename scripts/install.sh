@@ -476,9 +476,9 @@ cd "$INSTALL_DIR"
 source venv/bin/activate
 
 # Build setup flags
-SETUP_FLAGS=""
+SETUP_FLAGS="--non-interactive"
 if [ "$SKIP_AUTH" = true ]; then
-    SETUP_FLAGS="--skip-auth"
+    SETUP_FLAGS="$SETUP_FLAGS --skip-auth"
 fi
 
 # Run setup command
