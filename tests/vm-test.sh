@@ -8,12 +8,17 @@
 # Prerequisites:
 #   brew install cirruslabs/cli/tart
 #
+# First-time setup:
+#   On first run, macOS will prompt to approve the Tart Guest Agent.
+#   Run ./vm-test.sh --shell, wait for notification, then exit and re-run.
+#   This is a one-time step - subsequent runs work automatically.
+#
 # Usage:
 #   ./vm-test.sh                    # Run tests in VM
 #   ./vm-test.sh --setup            # Set up VM only
 #   ./vm-test.sh --quick            # Quick tests
 #   ./vm-test.sh --cleanup          # Remove VM
-#   ./vm-test.sh --shell            # Open shell in VM
+#   ./vm-test.sh --shell            # Open shell in VM (for first-time setup)
 
 set -e
 
@@ -137,7 +142,7 @@ VM_PID=$!
 
 # Function to run commands in VM
 vm_exec() {
-    tart exec "$VM_NAME" -- "$@"
+    tart exec "$VM_NAME" "$@"
 }
 
 # Wait for VM to boot and guest agent to be ready
@@ -184,22 +189,27 @@ if [ "$READY" = false ]; then
     fi
 
     echo ""
-    echo -e "${YELLOW}Possible issues:${NC}"
-    echo "1. The base image may not have guest agent installed"
-    echo "2. macOS may be waiting for first-boot setup"
-    echo "3. The VM needs more resources (CPU/RAM)"
+    echo -e "${YELLOW}Most likely cause:${NC}"
+    echo "On first boot, macOS requires approval for the Tart Guest Agent"
+    echo "to run in the background. This is a one-time setup step."
     echo ""
-    echo -e "${YELLOW}Try these steps:${NC}"
-    echo "  1. Clean up and retry with fresh VM:"
-    echo "     ./vm-test.sh --cleanup && ./vm-test.sh"
-    echo ""
-    echo "  2. Open VM interactively to complete setup:"
+    echo -e "${YELLOW}To fix (one-time setup):${NC}"
+    echo "  1. Open VM interactively:"
     echo "     ./vm-test.sh --shell"
-    echo "     (Complete any macOS setup prompts, then exit and retry)"
     echo ""
-    echo "  3. Check Tart documentation for your version:"
-    echo "     tart --version"
-    echo "     Visit: https://tart.run"
+    echo "  2. In the VM, you'll see a notification:"
+    echo "     \"Background Items Added - tart-guest-agent\""
+    echo "     Click 'Open Login Items Settings' or ignore the notification"
+    echo ""
+    echo "  3. The guest agent will be automatically allowed after first boot"
+    echo "     (No need to manually enable it in System Settings)"
+    echo ""
+    echo "  4. Exit the VM (Command+Q) and re-run tests:"
+    echo "     ./vm-test.sh"
+    echo ""
+    echo -e "${YELLOW}Alternative troubleshooting:${NC}"
+    echo "  • Clean up and retry: ./vm-test.sh --cleanup && ./vm-test.sh"
+    echo "  • Check Tart version: tart --version (visit https://tart.run)"
 
     tart stop "$VM_NAME" 2>/dev/null || true
     exit 1
@@ -225,7 +235,7 @@ echo -e "${GREEN}✓ Dependencies installed${NC}"
 
 # Install Claude Code (mock installation for testing)
 echo "Setting up mock Claude Code directory..."
-vm_exec mkdir -p ~/.claude/projects
+vm_exec mkdir -p '$HOME/.claude/projects'
 echo -e "${GREEN}✓ Mock Claude Code directory created${NC}"
 
 # Copy repository to VM
@@ -233,7 +243,8 @@ echo ""
 echo -e "${BLUE}Copying repository to VM...${NC}"
 
 # Create a temporary tarball
-TEMP_TAR=$(mktemp /tmp/vibe-check.XXXXXX.tar.gz)
+TEMP_TAR=$(mktemp /tmp/vibe-check.XXXXXX)
+TEMP_TAR="${TEMP_TAR}.tar.gz"
 tar -czf "$TEMP_TAR" -C "$REPO_ROOT" \
     --exclude '.git' \
     --exclude 'venv' \
@@ -242,10 +253,42 @@ tar -czf "$TEMP_TAR" -C "$REPO_ROOT" \
     --exclude '.DS_Store' \
     .
 
-# Copy to VM
+# Copy to VM and extract
 vm_exec mkdir -p /tmp/vibe-check
-tart cp "$TEMP_TAR" "$VM_NAME:/tmp/vibe-check.tar.gz"
+
+# Transfer file via HTTP server to avoid ARG_MAX and file descriptor limits
+echo "Transferring repository via HTTP server..."
+
+# Start a simple Python HTTP server on host
+HTTP_PORT=8765
+python3 -m http.server $HTTP_PORT --directory "$(dirname "$TEMP_TAR")" >/dev/null 2>&1 &
+HTTP_PID=$!
+sleep 2  # Give server time to start
+
+# Get host IP that VM can reach
+HOST_IP=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | head -n 1 | awk '{print $2}')
+TARBALL_NAME=$(basename "$TEMP_TAR")
+
+# Download from VM
+if vm_exec curl -f -o /tmp/vibe-check.tar.gz "http://${HOST_IP}:${HTTP_PORT}/${TARBALL_NAME}"; then
+    echo "✓ File transferred successfully"
+else
+    echo "✗ File transfer failed"
+    kill $HTTP_PID 2>/dev/null || true
+    tart stop "$VM_NAME" 2>/dev/null || true
+    exit 1
+fi
+
+# Stop HTTP server
+kill $HTTP_PID 2>/dev/null || true
+
+# Extract tarball
 vm_exec tar -xzf /tmp/vibe-check.tar.gz -C /tmp/vibe-check
+vm_exec rm /tmp/vibe-check.tar.gz
+
+# Ensure scripts are executable
+vm_exec bash -c "find /tmp/vibe-check/scripts -name '*.sh' -exec chmod +x {} + 2>/dev/null || true"
+vm_exec bash -c "find /tmp/vibe-check/tests -name '*.sh' -exec chmod +x {} + 2>/dev/null || true"
 
 rm "$TEMP_TAR"
 echo -e "${GREEN}✓ Repository copied to VM${NC}"
@@ -262,7 +305,7 @@ if [ "$QUICK_MODE" = true ]; then
 fi
 
 TEST_RESULT=0
-vm_exec bash -c "cd /tmp/vibe-check && ./tests/test-install.sh $TEST_FLAGS --verbose" || TEST_RESULT=$?
+vm_exec bash -c "cd /tmp/vibe-check && ./tests/test-install.sh $TEST_FLAGS --mock-claude --verbose" || TEST_RESULT=$?
 
 echo ""
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}"

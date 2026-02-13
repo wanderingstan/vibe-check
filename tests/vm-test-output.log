@@ -1,0 +1,245 @@
+[0;34m╔═══════════════════════════════════════════════════════╗[0m
+[0;34m║   Vibe Check VM Testing (Tart)                       ║[0m
+[0;34m╚═══════════════════════════════════════════════════════╝[0m
+
+[0;32m✓ Tart installed[0m
+[0;34mCreating VM from base image...[0m
+This will download ~25GB on first run (cached for future use)
+
+[0;32m✓ VM created[0m
+
+[0;34mStarting VM...[0m
+Waiting for VM to boot and guest agent to start...
+(This usually takes 30-60 seconds)
+.
+[0;32m✓ VM ready[0m
+
+[0;34mSetting up VM environment...[0m
+[0;32m✓ Homebrew installed[0m
+Installing dependencies...
+==> Auto-updating Homebrew...
+Adjust how often this is run with `$HOMEBREW_AUTO_UPDATE_SECS` or disable with
+`$HOMEBREW_NO_AUTO_UPDATE=1`. Hide these hints with `$HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+==> Homebrew collects anonymous analytics.
+Read the analytics documentation (and how to opt-out) here:
+  https://docs.brew.sh/Analytics
+No analytics have been recorded yet (nor will be during this `brew` run).
+
+==> Homebrew is run entirely by unpaid volunteers. Please consider donating:
+  https://github.com/Homebrew/brew#donations
+
+==> Auto-updated Homebrew!
+Updated 4 taps (buildkite/buildkite, cirruslabs/cli, homebrew/core and homebrew/cask).
+==> New Formulae
+actions-up: Tool to update GitHub Actions to latest versions with SHA pinning
+bazel@8: Google's own build tool
+go@1.25: Open source programming language to build simple/reliable/efficient software
+happy-coder: CLI for operating AI coding agents from mobile devices
+libnpupnp: C++ base UPnP library, derived from Portable UPnP, a.k.a libupnp
+libupnpp: C++ wrapper for libnpupnp
+livereload: Local web server in Python
+mipsel-linux-gnu-binutils: GNU Binutils for mipsel-linux-gnu cross development
+picoruby: Smallest Ruby implementation for microcontrollers
+run-kit: Universal multi-language runner and smart REPL
+skillshare: Sync skills across AI CLI tools
+tuckr: Super powered replacement for GNU Stow
+==> New Casks
+desktop-composer: Appearance manager for the system and individual applications
+font-dejavu-sans
+macpulse: System monitoring dashboard with historical analytics
+netviews: Network and Wi-Fi diagnostic tool
+supacode: Native terminal coding agents command center
+thaw@beta: Menu bar manager
+thecommander: Dual-panel file manager inspired by Total Commander
+updatest: Utility that shows the latest app updates
+xkey: Vietnamese input method engine
+
+You have 7 outdated formulae installed.
+
+==> Fetching downloads for: python@3.14 and git
+✔︎ Bottle Manifest python@3.14 (3.14.3_1)
+✔︎ Bottle Manifest git (2.53.0)
+✔︎ Bottle Manifest libiconv (1.18)
+✔︎ Bottle Manifest pcre2 (10.47_1)
+✔︎ Bottle libiconv (1.18)
+✔︎ Bottle pcre2 (10.47_1)
+✔︎ Bottle git (2.53.0)
+✔︎ Bottle python@3.14 (3.14.3_1)
+==> Pouring python@3.14--3.14.3_1.arm64_sonoma.bottle.tar.gz
+==> Caveats
+Python is installed as
+  /opt/homebrew/bin/python3
+
+Unversioned symlinks `python`, `python-config`, `pip` etc. pointing to
+`python3`, `python3-config`, `pip3` etc., respectively, are installed into
+  /opt/homebrew/opt/python@3.14/libexec/bin
+
+`idle3.14` requires tkinter, which is available separately:
+  brew install python-tk@3.14
+
+See: https://docs.brew.sh/Homebrew-and-Python
+==> Summary
+🍺  /opt/homebrew/Cellar/python@3.14/3.14.3_1: 3,764 files, 75.3MB
+==> Running `brew cleanup python@3.14`...
+Disable this behaviour by setting `HOMEBREW_NO_INSTALL_CLEANUP=1`.
+Hide these hints with `HOMEBREW_NO_ENV_HINTS=1` (see `man brew`).
+==> Installing dependencies for git: pcre2 and libiconv
+==> Installing git dependency: pcre2
+==> Pouring pcre2--10.47_1.arm64_sonoma.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/pcre2/10.47_1: 244 files, 7.2MB
+==> Installing git dependency: libiconv
+==> Pouring libiconv--1.18.arm64_sonoma.bottle.tar.gz
+🍺  /opt/homebrew/Cellar/libiconv/1.18: 32 files, 2.9MB
+==> Installing git
+==> Pouring git--2.53.0.arm64_sonoma.bottle.tar.gz
+==> Caveats
+The Tcl/Tk GUIs (e.g. gitk, git-gui) are now in the `git-gui` formula.
+Subversion interoperability (git-svn) is now in the `git-svn` formula.
+==> Summary
+🍺  /opt/homebrew/Cellar/git/2.53.0: 1,741 files, 62.3MB
+==> Running `brew cleanup git`...
+==> Caveats
+zsh completions and functions have been installed to:
+  /opt/homebrew/share/zsh/site-functions
+==> python@3.14
+Python is installed as
+  /opt/homebrew/bin/python3
+
+Unversioned symlinks `python`, `python-config`, `pip` etc. pointing to
+`python3`, `python3-config`, `pip3` etc., respectively, are installed into
+  /opt/homebrew/opt/python@3.14/libexec/bin
+
+`idle3.14` requires tkinter, which is available separately:
+  brew install python-tk@3.14
+
+See: https://docs.brew.sh/Homebrew-and-Python
+==> git
+The Tcl/Tk GUIs (e.g. gitk, git-gui) are now in the `git-gui` formula.
+Subversion interoperability (git-svn) is now in the `git-svn` formula.
+[0;32m✓ Dependencies installed[0m
+Setting up mock Claude Code directory...
+[0;32m✓ Mock Claude Code directory created[0m
+
+[0;34mCopying repository to VM...[0m
+Transferring repository via HTTP server...
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100 13.9M  100 13.9M    0     0   378M      0 --:--:-- --:--:-- --:--:--  387M
+✓ File transferred successfully
+./vm-test.sh: line 144: 10769 Terminated: 15          python3 -m http.server $HTTP_PORT --directory "$(dirname "$TEMP_TAR")" > /dev/null 2>&1
+[0;32m✓ Repository copied to VM[0m
+
+[0;34mRunning tests in VM...[0m
+[0;34m═══════════════════════════════════════════════════════[0m
+
+
+[0;34m╔═══════════════════════════════════════════════════════╗[0m
+[0;34m║   Vibe Check Installation Test Suite                 ║[0m
+[0;34m╚═══════════════════════════════════════════════════════╝[0m
+
+[1mChecking Prerequisites...[0m
+[0;34m[VERBOSE][0m Checking prerequisites...
+[0;34m[VERBOSE][0m ✓ Python 3 found: Python 3.9.6
+[0;34m[VERBOSE][0m ✓ pip found
+[0;34m[VERBOSE][0m ✓ git found: git version 2.39.5 (Apple Git-154)
+[1;33m[WARN][0m Claude Code not found, creating mock directory...
+[0;34m[VERBOSE][0m ✓ Mock Claude Code directory created
+[0;34m[VERBOSE][0m ✓ All required repo files present
+[0;32m[PASS][0m All prerequisites met
+[0;34m[INFO][0m Cleaning up test environment...
+[0;32m[PASS][0m Test environment cleaned
+
+[1mRunning Installation Tests...[0m
+
+[1mTest 1: Fresh Installation[0m
+[0;34m[INFO][0m Running fresh installation...
+Logging installation to: /tmp/vibe-check-install.XXXXXX.log
+[1;33mNote: For macOS with Homebrew, consider using:[0m
+[1;33m  brew tap wanderingstan/vibe-check && brew install vibe-check[0m
+
+[0;34mRunning from local directory: /tmp/vibe-check[0m
+[0;34mWill install to: /Users/admin/.vibe-check[0m
+[0;34m
+╔═══════════════════════════════════════╗
+║   Vibe Check Installer v1.1           ║
+║   (non-Homebrew installation)         ║
+╚═══════════════════════════════════════╝
+[0m
+[0;32m✓ Claude Code detected[0m
+[0;34mChecking dependencies...[0m
+[0;32m✓ All dependencies found[0m
+[0;34mCreating installation directory...[0m
+[0;34mCopying files from local directory...[0m
+[0;32m✓ Files copied[0m
+[0;34mSetting up Python virtual environment...[0m
+[0;34mInstalling Python dependencies...[0m
+[0;34mSetting up vibe-check command...[0m
+[1;33mAdding /Users/admin/.vibe-check to your PATH...[0m
+[0;32m✓ vibe-check command available[0m
+
+[0;34m╔═══════════════════════════════════════╗[0m
+[0;34m║   Running Setup Wizard                ║[0m
+[0;34m╚═══════════════════════════════════════╝[0m
+
+/Users/admin/.vibe-check/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+╔═══════════════════════════════════════════════╗
+║   Vibe Check Setup Wizard                     ║
+╚═══════════════════════════════════════════════╝
+
+1️⃣  Checking prerequisites...
+   ✅ Claude Code detected
+
+2️⃣  Configuration...
+   Creating default configuration...
+   ✅ Config created: /Users/admin/.vibe-check/config.json
+
+3️⃣  Remote Logging...
+   ✅ Skipped (--skip-auth)
+
+4️⃣  Claude Code Skills...
+   ✅ Skills configured
+
+5️⃣  MCP Plugin...
+   ✅ MCP plugin configured
+
+6️⃣  Git Integration...
+   ✅ Skipped (non-interactive mode)
+
+7️⃣  Service Registration...
+   ⚙️  Registering vibe-check service...
+   ✅ LaunchAgent installed: /Users/admin/Library/LaunchAgents/com.vibecheck.monitor.plist
+      Service will start automatically on boot
+
+8️⃣  Starting daemon...
+
+☁️  Remote Logging Configuration
+   ═══════════════════════════════
+   Vibe Check can optionally sync your Claude Code conversations
+   to a remote server for web-based viewing and sharing.
+
+   • All conversations are stored locally in SQLite
+   • Remote sync is optional and can be enabled later
+
+Enable remote logging? (y/N): 
+✓ Skipping remote logging - local-only mode
+  You can enable remote sync later with: vibe-check auth login
+🧜 Starting monitor in background...
+
+✓ Skipping remote logging - local-only mode
+  You can enable remote sync later with: vibe-check auth login
+🧜 Starting monitor in background...
+
+✓ Skipping remote logging - local-only mode
+  You can enable remote sync later with: vibe-check auth login
+🧜 Starting monitor in background...
+
+[0;32m╔═══════════════════════════════════════╗[0m
+[0;32m║   Installation Complete!              ║[0m
+[0;32m╚═══════════════════════════════════════╝[0m
+
+[0;34mCommands:[0m
+  vibe-check status      # Check status
+  vibe-check logs        # View logs
+  vibe-check auth login  # Re-authenticate
+

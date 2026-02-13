@@ -8,13 +8,18 @@
 # Prerequisites:
 #   brew install cirruslabs/cli/tart
 #
+# First-time setup:
+#   On first run, macOS will prompt to approve the Tart Guest Agent.
+#   Run ./vm-test-homebrew.sh --shell, wait for notification, then exit and re-run.
+#   This is a one-time step - subsequent runs work automatically.
+#
 # Usage:
 #   ./vm-test-homebrew.sh                    # Test published formula
 #   ./vm-test-homebrew.sh --local            # Test local formula file
 #   ./vm-test-homebrew.sh --quick            # Quick tests only
 #   ./vm-test-homebrew.sh --setup            # Set up VM only
 #   ./vm-test-homebrew.sh --cleanup          # Remove VM
-#   ./vm-test-homebrew.sh --shell            # Open shell in VM
+#   ./vm-test-homebrew.sh --shell            # Open shell in VM (for first-time setup)
 
 set -e
 
@@ -153,7 +158,7 @@ VM_PID=$!
 
 # Function to run commands in VM
 vm_exec() {
-    tart exec "$VM_NAME" -- "$@"
+    tart exec "$VM_NAME" "$@"
 }
 
 # Wait for VM to boot and guest agent to be ready
@@ -200,22 +205,27 @@ if [ "$READY" = false ]; then
     fi
 
     echo ""
-    echo -e "${YELLOW}Possible issues:${NC}"
-    echo "1. The base image may not have guest agent installed"
-    echo "2. macOS may be waiting for first-boot setup"
-    echo "3. The VM needs more resources (CPU/RAM)"
+    echo -e "${YELLOW}Most likely cause:${NC}"
+    echo "On first boot, macOS requires approval for the Tart Guest Agent"
+    echo "to run in the background. This is a one-time setup step."
     echo ""
-    echo -e "${YELLOW}Try these steps:${NC}"
-    echo "  1. Clean up and retry with fresh VM:"
-    echo "     ./vm-test-homebrew.sh --cleanup && ./vm-test-homebrew.sh"
-    echo ""
-    echo "  2. Open VM interactively to complete setup:"
+    echo -e "${YELLOW}To fix (one-time setup):${NC}"
+    echo "  1. Open VM interactively:"
     echo "     ./vm-test-homebrew.sh --shell"
-    echo "     (Complete any macOS setup prompts, then exit and retry)"
     echo ""
-    echo "  3. Check Tart documentation for your version:"
-    echo "     tart --version"
-    echo "     Visit: https://tart.run"
+    echo "  2. In the VM, you'll see a notification:"
+    echo "     \"Background Items Added - tart-guest-agent\""
+    echo "     Click 'Open Login Items Settings' or ignore the notification"
+    echo ""
+    echo "  3. The guest agent will be automatically allowed after first boot"
+    echo "     (No need to manually enable it in System Settings)"
+    echo ""
+    echo "  4. Exit the VM (Command+Q) and re-run tests:"
+    echo "     ./vm-test-homebrew.sh"
+    echo ""
+    echo -e "${YELLOW}Alternative troubleshooting:${NC}"
+    echo "  • Clean up and retry: ./vm-test-homebrew.sh --cleanup && ./vm-test-homebrew.sh"
+    echo "  • Check Tart version: tart --version (visit https://tart.run)"
 
     tart stop "$VM_NAME" 2>/dev/null || true
     exit 1
@@ -239,7 +249,7 @@ echo -e "${GREEN}✓ Homebrew installed${NC}"
 
 # Create mock Claude Code directory (required for vibe-check)
 echo "Setting up mock Claude Code directory..."
-vm_exec mkdir -p ~/.claude/projects
+vm_exec mkdir -p '$HOME/.claude/projects'
 echo -e "${GREEN}✓ Mock Claude Code directory created${NC}"
 
 # Install vibe-check via Homebrew
@@ -259,7 +269,8 @@ if [ "$LOCAL_FORMULA" = true ]; then
 
     # Copy formula to VM
     vm_exec mkdir -p /tmp/homebrew-test
-    tart cp "$REPO_ROOT/Formula/vibe-check.rb" "$VM_NAME:/tmp/homebrew-test/vibe-check.rb"
+    FORMULA_ENCODED=$(base64 < "$REPO_ROOT/Formula/vibe-check.rb")
+    vm_exec bash -c "echo '$FORMULA_ENCODED' | base64 -d > /tmp/homebrew-test/vibe-check.rb"
 
     echo "Installing from local formula..."
     if ! vm_exec bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && brew install --build-from-source /tmp/homebrew-test/vibe-check.rb'; then
@@ -290,7 +301,8 @@ fi
 echo ""
 echo -e "${BLUE}Copying test script to VM...${NC}"
 vm_exec mkdir -p /tmp/vibe-check-tests
-tart cp "$REPO_ROOT/tests/test-homebrew.sh" "$VM_NAME:/tmp/vibe-check-tests/test-homebrew.sh"
+TEST_SCRIPT_ENCODED=$(base64 < "$REPO_ROOT/tests/test-homebrew.sh")
+vm_exec bash -c "echo '$TEST_SCRIPT_ENCODED' | base64 -d > /tmp/vibe-check-tests/test-homebrew.sh"
 vm_exec chmod +x /tmp/vibe-check-tests/test-homebrew.sh
 echo -e "${GREEN}✓ Test script copied${NC}"
 

@@ -2399,43 +2399,46 @@ def cmd_start(args):
         print(f"✅ Monitor is already running (PID: {pid})")
         return
 
-    # Check if authenticated, offer to login on first start
-    config_path = get_config_path()
-    needs_auth_prompt = False
+    # Check if authenticated, offer to login on first start (unless skip_auth_check is set)
+    skip_auth_check = getattr(args, 'skip_auth_check', False)
 
-    if config_path.exists():
-        try:
-            with open(config_path, "r") as f:
-                config = json.load(f)
-            api_key = config.get("api", {}).get("api_key", "")
-            if not api_key:
+    if not skip_auth_check:
+        config_path = get_config_path()
+        needs_auth_prompt = False
+
+        if config_path.exists():
+            try:
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                api_key = config.get("api", {}).get("api_key", "")
+                if not api_key:
+                    needs_auth_prompt = True
+            except (json.JSONDecodeError, IOError):
                 needs_auth_prompt = True
-        except (json.JSONDecodeError, IOError):
+        else:
             needs_auth_prompt = True
-    else:
-        needs_auth_prompt = True
 
-    if needs_auth_prompt:
-        print("\n☁️  Remote Logging Configuration")
-        print("   ═══════════════════════════════")
-        print("   Vibe Check can optionally sync your Claude Code conversations")
-        print("   to a remote server for web-based viewing and sharing.")
-        print()
-        print("   • All conversations are stored locally in SQLite")
-        print("   • Remote sync is optional and can be enabled later")
-        print()
-        print("Enable remote logging? (y/N): ", end="", flush=True)
-        try:
-            response = input().strip().lower()
-            if response in ["y", "yes"]:  # Opt-in (default to NO)
-                cmd_auth_login(args)
-                print()  # blank line after auth
-            else:
+        if needs_auth_prompt:
+            print("\n☁️  Remote Logging Configuration")
+            print("   ═══════════════════════════════")
+            print("   Vibe Check can optionally sync your Claude Code conversations")
+            print("   to a remote server for web-based viewing and sharing.")
+            print()
+            print("   • All conversations are stored locally in SQLite")
+            print("   • Remote sync is optional and can be enabled later")
+            print()
+            print("Enable remote logging? (y/N): ", end="", flush=True)
+            try:
+                response = input().strip().lower()
+                if response in ["y", "yes"]:  # Opt-in (default to NO)
+                    cmd_auth_login(args)
+                    print()  # blank line after auth
+                else:
+                    print("\n✓ Skipping remote logging - local-only mode")
+                    print("  You can enable remote sync later with: vibe-check auth login")
+            except (EOFError, KeyboardInterrupt):
                 print("\n✓ Skipping remote logging - local-only mode")
                 print("  You can enable remote sync later with: vibe-check auth login")
-        except (EOFError, KeyboardInterrupt):
-            print("\n✓ Skipping remote logging - local-only mode")
-            print("  You can enable remote sync later with: vibe-check auth login")
 
     # Check and auto-install MCP plugin if not present
     check_mcp_plugin()
@@ -3454,6 +3457,7 @@ def cmd_setup(args):
                 'foreground': False,
                 'skip_backlog': getattr(args, 'skip_backlog', False),
                 'skip_skills_check': True,  # Already checked above
+                'skip_auth_check': True,  # Don't prompt for auth - already handled in setup
             })()
             cmd_start(args_copy)
         except Exception as e:
