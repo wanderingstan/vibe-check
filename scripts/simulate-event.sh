@@ -4,7 +4,11 @@
 
 # Configuration
 PROJECTS_DIR="${HOME}/.claude/projects"
-TEST_PROJECT_DIR="${PROJECTS_DIR}/-Users-wanderingstan-Developer-vibe-check"
+# Use a generic test project directory name
+TEST_PROJECT_DIR="${PROJECTS_DIR}/test-vibe-check"
+
+# Create test project directory if it doesn't exist
+mkdir -p "$TEST_PROJECT_DIR"
 
 # Generate a unique UUID
 UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
@@ -15,9 +19,12 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 # Message content (can be overridden via argument)
 MESSAGE="${1:-TESTING vibe-check monitoring at $TIMESTAMP}"
 
+# Use current working directory or a generic path
+CWD="${PWD:-/tmp/test}"
+
 # Create the test event JSON
 EVENT=$(cat <<EOF
-{"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"/Users/wanderingstan/Developer/vibe-check","sessionId":"test-session-$UUID","version":"2.0.74","gitBranch":"main","type":"user","message":{"role":"user","content":[{"type":"text","text":"$MESSAGE"}]},"uuid":"$UUID","timestamp":"$TIMESTAMP"}
+{"parentUuid":null,"isSidechain":false,"userType":"external","cwd":"$CWD","sessionId":"test-session-$UUID","version":"2.0.74","gitBranch":"main","type":"user","message":{"role":"user","content":[{"type":"text","text":"$MESSAGE"}]},"uuid":"$UUID","timestamp":"$TIMESTAMP"}
 EOF
 )
 

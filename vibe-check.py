@@ -1610,21 +1610,15 @@ def check_claude_skills(interactive=True):
             )
         return
 
-    # Check if we're in the vibe-check directory with the installer
-    script_dir = Path(__file__).parent
-    installer_path = script_dir / "scripts" / "install-plugin.sh"
-
-    if not installer_path.exists():
-        # Installer not available (maybe installed via package manager)
-        return
-
-    # Non-interactive mode: auto-install
+    # Non-interactive mode: auto-install by copying skills directly
     if not interactive:
         import shutil
         skills_dir.mkdir(parents=True, exist_ok=True)
-        # Copy skills from repo location
+        # Copy skills from repo/installation location
+        script_dir = Path(__file__).parent
         repo_skills_dir = script_dir / "skills"
         if repo_skills_dir.exists():
+            installed_count = 0
             for skill_src_dir in repo_skills_dir.glob("vibe-check-*"):
                 if skill_src_dir.is_dir() and (skill_src_dir / "SKILL.md").exists():
                     dest = skills_dir / skill_src_dir.name
@@ -1632,8 +1626,25 @@ def check_claude_skills(interactive=True):
                         if dest.exists():
                             shutil.rmtree(dest)
                         shutil.copytree(skill_src_dir, dest)
+                        installed_count += 1
+                        logger.debug(f"Installed skill: {skill_src_dir.name}")
                     except Exception as e:
                         logger.warning(f"Could not install skill {skill_src_dir.name}: {e}")
+            if installed_count > 0:
+                logger.info(f"Installed {installed_count} skills to {skills_dir}")
+            else:
+                logger.warning(f"No skills found in {repo_skills_dir}")
+        else:
+            logger.warning(f"Skills directory not found: {repo_skills_dir}")
+        return
+
+    # Interactive mode: check if installer script is available
+    script_dir = Path(__file__).parent
+    installer_path = script_dir / "scripts" / "install-plugin.sh"
+
+    if not installer_path.exists():
+        # Installer not available - can't do interactive installation
+        logger.debug("Skills installer not found, skipping interactive prompt")
         return
 
     # Skills are missing and installer is available - prompt user
@@ -3438,32 +3449,94 @@ def cmd_setup(args):
     print("7️⃣  Service Registration...")
 
     service_ok = register_service()
+    service_was_registered = False
+
+    # Check if LaunchAgent or systemd service was just created
+    system = platform.system()
+    if service_ok:
+        if system == "Darwin":
+            plist_path = Path.home() / "Library/LaunchAgents/com.vibecheck.monitor.plist"
+            service_was_registered = plist_path.exists() and not is_homebrew_service()
+        elif system == "Linux":
+            service_path = Path.home() / ".config/systemd/user/vibe-check.service"
+            service_was_registered = service_path.exists()
+
     if not service_ok:
         print("   ⚠️  Service registration had issues")
         print("      You can start manually with: vibe-check start")
 
-    # Start daemon
+    # Start daemon (skip if LaunchAgent/systemd service was just registered, as it auto-starts)
     print()
     print("8️⃣  Starting daemon...")
 
-    pid = is_running()
-    if pid:
-        print(f"   ✅ Already running (PID: {pid})")
+    if service_was_registered:
+        print("   ⏳ Waiting for system service to start...")
+        # Give the service time to start (LaunchAgent can be slow on first boot)
+        max_wait = 10
+        for i in range(max_wait):
+            time.sleep(1)
+            pid = is_running()
+            if pid:
+                print(f"   ✅ Service started (PID: {pid})")
+                break
+        else:
+            # Service didn't start - fall back to manual start via subprocess
+            print("   ⚠️  Service didn't auto-start, starting manually...")
+            try:
+                # Use subprocess to avoid daemonize() forking issues when called from setup
+                script_dir = Path(__file__).parent
+                wrapper = script_dir / "vibe-check"
+                if not wrapper.exists():
+                    wrapper = Path.home() / ".vibe-check/vibe-check"
+
+                if wrapper.exists():
+                    subprocess.Popen([str(wrapper), "start"],
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+                    time.sleep(2)  # Give daemon time to start
+                    pid = is_running()
+                    if pid:
+                        print(f"   ✅ Daemon started (PID: {pid})")
+                    else:
+                        print("   ⚠️  Daemon is starting in background...")
+                else:
+                    print("   ⚠️  Cannot find vibe-check wrapper script")
+                    print("      Try manually: vibe-check start")
+            except Exception as e:
+                logger.error(f"Failed to start daemon: {e}")
+                print(f"   ⚠️  Failed to start daemon: {e}")
+                print("      Try manually: vibe-check start")
     else:
-        # Don't call cmd_start as it would check auth again and might be too verbose
-        # Just start the daemon quietly
-        try:
-            args_copy = type('Args', (), {
-                'foreground': False,
-                'skip_backlog': getattr(args, 'skip_backlog', False),
-                'skip_skills_check': True,  # Already checked above
-                'skip_auth_check': True,  # Don't prompt for auth - already handled in setup
-            })()
-            cmd_start(args_copy)
-        except Exception as e:
-            logger.error(f"Failed to start daemon: {e}")
-            print(f"   ⚠️  Failed to start daemon: {e}")
-            print("      Try manually: vibe-check start")
+        pid = is_running()
+        if pid:
+            print(f"   ✅ Already running (PID: {pid})")
+        else:
+            # Use subprocess to avoid daemonize() forking issues when called from setup
+            try:
+                script_dir = Path(__file__).parent
+                wrapper = script_dir / "vibe-check"
+                if not wrapper.exists():
+                    wrapper = Path.home() / ".vibe-check/vibe-check"
+
+                if wrapper.exists():
+                    subprocess.Popen([str(wrapper), "start"],
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+                    time.sleep(2)  # Give daemon time to start
+                    pid = is_running()
+                    if pid:
+                        print(f"   ✅ Daemon started (PID: {pid})")
+                    else:
+                        print("   ⚠️  Daemon is starting in background...")
+                else:
+                    print("   ⚠️  Cannot find vibe-check wrapper script")
+                    print("      Try manually: vibe-check start")
+            except Exception as e:
+                logger.error(f"Failed to start daemon: {e}")
+                print(f"   ⚠️  Failed to start daemon: {e}")
+                print("      Try manually: vibe-check start")
 
     # Success summary
     print()

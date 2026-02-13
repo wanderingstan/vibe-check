@@ -62,7 +62,7 @@ brew install cirruslabs/cli/tart  # One-time setup
 - Python 3 installation
 - pip availability
 - Git installation
-- Claude Code installation (~/.claude/projects exists)
+- Claude Code installation (~/.claude/projects exists) - **OR** use `--mock-claude` flag to create mock directory
 - Required repository files present
 
 ### Installation
@@ -89,11 +89,15 @@ brew install cirruslabs/cli/tart  # One-time setup
 
 ## Test Safety
 
-The test suite:
+**Local testing only** (`./test-install.sh --mock-claude`):
 - **Backs up** your existing installation to `~/.vibe-check.backup.<timestamp>`
 - **Backs up** your existing skills to `~/.claude/skills.backup.<timestamp>`
 - **Backs up** your shell config files before modifying PATH
 - **Restores** everything automatically on exit (success or failure)
+
+**VM testing** (`./vm-test.sh`, `./vm-test-homebrew.sh`):
+- No backups needed - tests run in isolated, disposable VMs
+- Your local installation is never touched
 
 ## Running on a Fresh Mac
 
@@ -104,11 +108,12 @@ To test the installation on a fresh system:
 git clone https://github.com/wanderingstan/vibe-check.git
 cd vibe-check
 
-# 2. Ensure Claude Code is installed
+# 2. (Optional) Ensure Claude Code is installed
 # Visit: https://code.claude.com/docs/en/quickstart
+# OR skip this and use --mock-claude flag in step 3
 
 # 3. Run the test suite
-./tests/test-install.sh
+./tests/test-install.sh --mock-claude  # Creates mock ~/.claude/projects if needed
 ```
 
 ## Remote Testing via SSH

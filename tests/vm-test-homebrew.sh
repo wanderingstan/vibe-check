@@ -144,7 +144,7 @@ fi
 # Shell mode
 if [ "$SHELL_ONLY" = true ]; then
     echo -e "${BLUE}Starting VM and opening shell...${NC}"
-    tart run "$VM_NAME"
+    tart run --dir="repo:$REPO_ROOT" "$VM_NAME"
     exit 0
 fi
 
@@ -152,8 +152,8 @@ fi
 echo ""
 echo -e "${BLUE}Starting VM...${NC}"
 
-# Start VM in background
-tart run "$VM_NAME" &
+# Start VM in background with shared directory
+tart run --dir="repo:$REPO_ROOT" "$VM_NAME" &
 VM_PID=$!
 
 # Function to run commands in VM
@@ -258,7 +258,7 @@ echo -e "${BLUE}Installing vibe-check via Homebrew...${NC}"
 
 if [ "$LOCAL_FORMULA" = true ]; then
     # Test local formula
-    echo "Copying local formula to VM..."
+    echo "Setting up local tap in VM..."
 
     # Check if Formula/vibe-check.rb exists
     if [ ! -f "$REPO_ROOT/Formula/vibe-check.rb" ]; then
@@ -267,18 +267,19 @@ if [ "$LOCAL_FORMULA" = true ]; then
         exit 1
     fi
 
-    # Copy formula to VM
-    vm_exec mkdir -p /tmp/homebrew-test
-    FORMULA_ENCODED=$(base64 < "$REPO_ROOT/Formula/vibe-check.rb")
-    vm_exec bash -c "echo '$FORMULA_ENCODED' | base64 -d > /tmp/homebrew-test/vibe-check.rb"
+    # Create a local tap structure in VM
+    # Shared directory appears at /Volumes/My Shared Files/repo in the VM
+    echo "Creating local tap structure..."
+    vm_exec bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && mkdir -p "$(brew --repo)/Library/Taps/local/homebrew-test/Formula"'
+    vm_exec bash -c 'cp "/Volumes/My Shared Files/repo/Formula/vibe-check.rb" "$(eval "$(/opt/homebrew/bin/brew shellenv)" && echo "$(brew --repo)")/Library/Taps/local/homebrew-test/Formula/vibe-check.rb"'
 
-    echo "Installing from local formula..."
-    if ! vm_exec bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && brew install --build-from-source /tmp/homebrew-test/vibe-check.rb'; then
-        echo -e "${RED}✗ Failed to install from local formula${NC}"
+    echo "Installing from local tap..."
+    if ! vm_exec bash -c 'eval "$(/opt/homebrew/bin/brew shellenv)" && brew install --build-from-source local/test/vibe-check'; then
+        echo -e "${RED}✗ Failed to install from local tap${NC}"
         tart stop "$VM_NAME" 2>/dev/null || true
         exit 1
     fi
-    echo -e "${GREEN}✓ Installed from local formula${NC}"
+    echo -e "${GREEN}✓ Installed from local tap${NC}"
 else
     # Test published formula
     echo "Tapping wanderingstan/vibe-check..."
@@ -297,12 +298,11 @@ else
     echo -e "${GREEN}✓ Installed from published formula${NC}"
 fi
 
-# Copy test script to VM
+# Copy test script to VM from shared directory
 echo ""
 echo -e "${BLUE}Copying test script to VM...${NC}"
 vm_exec mkdir -p /tmp/vibe-check-tests
-TEST_SCRIPT_ENCODED=$(base64 < "$REPO_ROOT/tests/test-homebrew.sh")
-vm_exec bash -c "echo '$TEST_SCRIPT_ENCODED' | base64 -d > /tmp/vibe-check-tests/test-homebrew.sh"
+vm_exec cp '/Volumes/My Shared Files/repo/tests/test-homebrew.sh' /tmp/vibe-check-tests/test-homebrew.sh
 vm_exec chmod +x /tmp/vibe-check-tests/test-homebrew.sh
 echo -e "${GREEN}✓ Test script copied${NC}"
 

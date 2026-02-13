@@ -128,7 +128,7 @@ fi
 # Shell mode
 if [ "$SHELL_ONLY" = true ]; then
     echo -e "${BLUE}Starting VM and opening shell...${NC}"
-    tart run "$VM_NAME"
+    tart run --dir="repo:$REPO_ROOT" "$VM_NAME"
     exit 0
 fi
 
@@ -136,8 +136,8 @@ fi
 echo ""
 echo -e "${BLUE}Starting VM...${NC}"
 
-# Start VM in background
-tart run "$VM_NAME" &
+# Start VM in background with shared directory
+tart run --dir="repo:$REPO_ROOT" "$VM_NAME" &
 VM_PID=$!
 
 # Function to run commands in VM
@@ -238,59 +238,22 @@ echo "Setting up mock Claude Code directory..."
 vm_exec mkdir -p '$HOME/.claude/projects'
 echo -e "${GREEN}✓ Mock Claude Code directory created${NC}"
 
-# Copy repository to VM
+# Copy repository to VM from shared directory
 echo ""
 echo -e "${BLUE}Copying repository to VM...${NC}"
 
-# Create a temporary tarball
-TEMP_TAR=$(mktemp /tmp/vibe-check.XXXXXX)
-TEMP_TAR="${TEMP_TAR}.tar.gz"
-tar -czf "$TEMP_TAR" -C "$REPO_ROOT" \
-    --exclude '.git' \
-    --exclude 'venv' \
-    --exclude '__pycache__' \
-    --exclude '*.pyc' \
-    --exclude '.DS_Store' \
-    .
-
-# Copy to VM and extract
-vm_exec mkdir -p /tmp/vibe-check
-
-# Transfer file via HTTP server to avoid ARG_MAX and file descriptor limits
-echo "Transferring repository via HTTP server..."
-
-# Start a simple Python HTTP server on host
-HTTP_PORT=8765
-python3 -m http.server $HTTP_PORT --directory "$(dirname "$TEMP_TAR")" >/dev/null 2>&1 &
-HTTP_PID=$!
-sleep 2  # Give server time to start
-
-# Get host IP that VM can reach
-HOST_IP=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | head -n 1 | awk '{print $2}')
-TARBALL_NAME=$(basename "$TEMP_TAR")
-
-# Download from VM
-if vm_exec curl -f -o /tmp/vibe-check.tar.gz "http://${HOST_IP}:${HTTP_PORT}/${TARBALL_NAME}"; then
-    echo "✓ File transferred successfully"
-else
-    echo "✗ File transfer failed"
-    kill $HTTP_PID 2>/dev/null || true
-    tart stop "$VM_NAME" 2>/dev/null || true
-    exit 1
-fi
-
-# Stop HTTP server
-kill $HTTP_PID 2>/dev/null || true
-
-# Extract tarball
-vm_exec tar -xzf /tmp/vibe-check.tar.gz -C /tmp/vibe-check
-vm_exec rm /tmp/vibe-check.tar.gz
+# Copy from shared directory, excluding unnecessary files
+# Shared directory appears at /Volumes/My Shared Files/repo in the VM
+vm_exec bash -c "
+    mkdir -p /tmp/vibe-check
+    cd '/Volumes/My Shared Files/repo'
+    rsync -a --exclude='.git' --exclude='venv' --exclude='__pycache__' --exclude='*.pyc' --exclude='.DS_Store' ./ /tmp/vibe-check/
+"
 
 # Ensure scripts are executable
 vm_exec bash -c "find /tmp/vibe-check/scripts -name '*.sh' -exec chmod +x {} + 2>/dev/null || true"
 vm_exec bash -c "find /tmp/vibe-check/tests -name '*.sh' -exec chmod +x {} + 2>/dev/null || true"
 
-rm "$TEMP_TAR"
 echo -e "${GREEN}✓ Repository copied to VM${NC}"
 
 # Run tests
