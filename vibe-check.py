@@ -13,6 +13,7 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -41,7 +42,7 @@ LOG_BACKUP_COUNT = 3  # Keep 3 rotated files (.log.1, .log.2, .log.3)
 logger = logging.getLogger("vibe-check")
 
 # Version
-VERSION = "1.1.12"
+VERSION = "1.1.11"
 
 # Default production API URL
 DEFAULT_API_URL = "https://vibecheck.wanderingstan.com/api"
@@ -1181,6 +1182,9 @@ class ConversationMonitor(FileSystemEventHandler):
             events_batch = []
             final_line_number = last_line
 
+            # Get git info once for all events in this file
+            git_remote_url, git_commit_hash = get_git_info(file_path.parent)
+
             for idx, line in enumerate(new_lines):
                 line_number = last_line + idx + 1
                 final_line_number = line_number
@@ -1193,13 +1197,6 @@ class ConversationMonitor(FileSystemEventHandler):
                 try:
                     # Parse JSON
                     event_data = json.loads(line)
-
-                    # Get git info from the event's working directory
-                    git_remote_url = None
-                    git_commit_hash = None
-                    working_dir = event_data.get("cwd")
-                    if working_dir:
-                        git_remote_url, git_commit_hash = get_git_info(Path(working_dir))
 
                     # Redact secrets before storage
                     event_data = self.redact_secrets_from_event(event_data)
@@ -1671,8 +1668,12 @@ def check_mcp_plugin(interactive: bool = True):
             print()
 
 
-def check_claude_skills():
-    """Check if Claude Code skills are installed and prompt to install if not."""
+def check_claude_skills(interactive=True):
+    """Check if Claude Code skills are installed and prompt to install if not.
+
+    Args:
+        interactive: If False, auto-install without prompting
+    """
     skills_dir = Path.home() / ".claude" / "skills"
 
     # Discover available skills from Homebrew or repo location
@@ -1743,12 +1744,41 @@ def check_claude_skills():
             )
         return
 
-    # Check if we're in the vibe-check directory with the installer
+    # Non-interactive mode: auto-install by copying skills directly
+    if not interactive:
+        import shutil
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        # Copy skills from repo/installation location
+        script_dir = Path(__file__).parent
+        repo_skills_dir = script_dir / "skills"
+        if repo_skills_dir.exists():
+            installed_count = 0
+            for skill_src_dir in repo_skills_dir.glob("vibe-check-*"):
+                if skill_src_dir.is_dir() and (skill_src_dir / "SKILL.md").exists():
+                    dest = skills_dir / skill_src_dir.name
+                    try:
+                        if dest.exists():
+                            shutil.rmtree(dest)
+                        shutil.copytree(skill_src_dir, dest)
+                        installed_count += 1
+                        logger.debug(f"Installed skill: {skill_src_dir.name}")
+                    except Exception as e:
+                        logger.warning(f"Could not install skill {skill_src_dir.name}: {e}")
+            if installed_count > 0:
+                logger.info(f"Installed {installed_count} skills to {skills_dir}")
+            else:
+                logger.warning(f"No skills found in {repo_skills_dir}")
+        else:
+            logger.warning(f"Skills directory not found: {repo_skills_dir}")
+        return
+
+    # Interactive mode: check if installer script is available
     script_dir = Path(__file__).parent
     installer_path = script_dir / "scripts" / "install-plugin.sh"
 
     if not installer_path.exists():
-        # Installer not available (maybe installed via package manager)
+        # Installer not available - can't do interactive installation
+        logger.debug("Skills installer not found, skipping interactive prompt")
         return
 
     # Skills are missing and installer is available - prompt user
@@ -1883,11 +1913,14 @@ def update_global_git_hooks_if_needed():
         logger.debug(f"Failed to auto-update global git hooks: {e}")
 
 
-def check_git_hooks():
+def check_git_hooks(interactive=True):
     """Check if git hooks are installed and prompt to install if not.
 
     Offers global installation (all repos) or local installation (current repo).
     Only prompts if install script is available.
+
+    Args:
+        interactive: If False, install globally without prompting
     """
     # Check if install script is available
     script_dir = Path(__file__).parent
@@ -1922,6 +1955,13 @@ def check_git_hooks():
 
     # If everything is installed, nothing to do
     if not global_needs_install and not local_needs_install:
+        return
+
+    # Non-interactive mode: install globally by default
+    if not interactive:
+        if global_needs_install:
+            args = type('Args', (), {'global_install': True, 'no_notes': False, 'path': None})()
+            cmd_git_install(args)
         return
 
     # Hooks are missing - prompt user
@@ -2246,6 +2286,202 @@ def is_systemd_service_running() -> bool:
     return False
 
 
+def create_macos_service() -> bool:
+    """Create macOS LaunchAgent plist for auto-start.
+
+    Returns:
+        True if service created successfully, False otherwise
+    """
+    # Skip if Homebrew (it manages its own service)
+    if is_homebrew_service():
+        return True
+
+    plist_path = Path.home() / "Library/LaunchAgents/com.vibecheck.monitor.plist"
+
+    # Find vibe-check wrapper script
+    script_dir = Path(__file__).parent
+    wrapper = script_dir / "vibe-check"
+
+    if not wrapper.exists():
+        # Try installed location
+        wrapper = Path.home() / ".vibe-check/vibe-check"
+
+    if not wrapper.exists():
+        logger.error("Cannot find vibe-check wrapper script")
+        return False
+
+    plist_content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.vibecheck.monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{wrapper}</string>
+        <string>start</string>
+        <string>--foreground</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>{Path.home()}/.vibe-check/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>{Path.home()}/.vibe-check/launchd.error.log</string>
+</dict>
+</plist>"""
+
+    try:
+        plist_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(plist_path, 'w') as f:
+            f.write(plist_content)
+
+        # Load the service
+        result = subprocess.run(
+            ["launchctl", "load", str(plist_path)],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            print(f"   ✅ LaunchAgent installed: {plist_path}")
+            print("      Service will start automatically on boot")
+            return True
+        else:
+            logger.error(f"Failed to load LaunchAgent: {result.stderr}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Failed to create LaunchAgent: {e}")
+        return False
+
+
+def create_linux_service() -> bool:
+    """Create systemd user service for auto-start.
+
+    Returns:
+        True if service created successfully, False otherwise
+    """
+    # Check if systemd is available
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "--version"],
+            capture_output=True,
+            check=False
+        )
+        if result.returncode != 0:
+            logger.warning("systemd user services not available")
+            return False
+    except FileNotFoundError:
+        logger.warning("systemctl not found")
+        return False
+
+    service_path = Path.home() / ".config/systemd/user/vibe-check.service"
+
+    # Find vibe-check wrapper
+    script_dir = Path(__file__).parent
+    wrapper = script_dir / "vibe-check"
+
+    if not wrapper.exists():
+        wrapper = Path.home() / ".vibe-check/vibe-check"
+
+    if not wrapper.exists():
+        logger.error("Cannot find vibe-check wrapper script")
+        return False
+
+    service_content = f"""[Unit]
+Description=Vibe Check - Claude Code Monitor
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={wrapper} start --foreground
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target"""
+
+    try:
+        service_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(service_path, 'w') as f:
+            f.write(service_content)
+
+        # Reload, enable, and start
+        subprocess.run(["systemctl", "--user", "daemon-reload"], check=False)
+        subprocess.run(["systemctl", "--user", "enable", "vibe-check"], check=False)
+        result = subprocess.run(
+            ["systemctl", "--user", "start", "vibe-check"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        # Verify it started
+        time.sleep(1)
+        verify = subprocess.run(
+            ["systemctl", "--user", "is-active", "vibe-check"],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if verify.stdout.strip() == "active":
+            print(f"   ✅ Systemd service installed: {service_path}")
+            print("      Service will start automatically on boot")
+            return True
+        else:
+            logger.warning("systemd service created but not active")
+            print(f"   ⚠️  Service created: {service_path}")
+            print("      May need manual start: systemctl --user start vibe-check")
+            return False
+
+    except Exception as e:
+        logger.error(f"Failed to create systemd service: {e}")
+        return False
+
+
+def register_service() -> bool:
+    """Register vibe-check as a system service (LaunchAgent or systemd).
+
+    Detects platform and creates appropriate service configuration.
+    Skips if Homebrew service is available (managed by brew services).
+
+    Returns:
+        True if service registered successfully, False otherwise
+    """
+    # Skip if Homebrew (it manages services)
+    if is_homebrew_service():
+        print("   ✅ Service managed by Homebrew (use: brew services start vibe-check)")
+        return True
+
+    # Skip if service already exists
+    system = platform.system()
+    if system == "Darwin":
+        plist_path = Path.home() / "Library/LaunchAgents/com.vibecheck.monitor.plist"
+        if plist_path.exists():
+            print(f"   ✅ LaunchAgent already installed: {plist_path}")
+            return True
+    elif system == "Linux":
+        service_path = Path.home() / ".config/systemd/user/vibe-check.service"
+        if service_path.exists():
+            print(f"   ✅ Systemd service already installed: {service_path}")
+            return True
+
+    print("   ⚙️  Registering vibe-check service...")
+
+    if system == "Darwin":
+        return create_macos_service()
+    elif system == "Linux":
+        return create_linux_service()
+    else:
+        print(f"   ⚠️  Automatic service registration not supported on {system}")
+        print("      The daemon will need to be started manually: vibe-check start")
+        return False
+
+
 def write_pid_file():
     """Write current process PID to file."""
     pid_file = get_pid_file()
@@ -2308,43 +2544,46 @@ def cmd_start(args):
         print(f"✅ Monitor is already running (PID: {pid})")
         return
 
-    # Check if authenticated, offer to login on first start
-    config_path = get_config_path()
-    needs_auth_prompt = False
+    # Check if authenticated, offer to login on first start (unless skip_auth_check is set)
+    skip_auth_check = getattr(args, 'skip_auth_check', False)
 
-    if config_path.exists():
-        try:
-            with open(config_path, "r") as f:
-                config = json.load(f)
-            api_key = config.get("api", {}).get("api_key", "")
-            if not api_key:
+    if not skip_auth_check:
+        config_path = get_config_path()
+        needs_auth_prompt = False
+
+        if config_path.exists():
+            try:
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                api_key = config.get("api", {}).get("api_key", "")
+                if not api_key:
+                    needs_auth_prompt = True
+            except (json.JSONDecodeError, IOError):
                 needs_auth_prompt = True
-        except (json.JSONDecodeError, IOError):
+        else:
             needs_auth_prompt = True
-    else:
-        needs_auth_prompt = True
 
-    if needs_auth_prompt:
-        print("\n☁️  Remote Logging Configuration")
-        print("   ═══════════════════════════════")
-        print("   Vibe Check can optionally sync your Claude Code conversations")
-        print("   to a remote server for web-based viewing and sharing.")
-        print()
-        print("   • All conversations are stored locally in SQLite")
-        print("   • Remote sync is optional and can be enabled later")
-        print()
-        print("Enable remote logging? (y/N): ", end="", flush=True)
-        try:
-            response = input().strip().lower()
-            if response in ["y", "yes"]:  # Opt-in (default to NO)
-                cmd_auth_login(args)
-                print()  # blank line after auth
-            else:
+        if needs_auth_prompt:
+            print("\n☁️  Remote Logging Configuration")
+            print("   ═══════════════════════════════")
+            print("   Vibe Check can optionally sync your Claude Code conversations")
+            print("   to a remote server for web-based viewing and sharing.")
+            print()
+            print("   • All conversations are stored locally in SQLite")
+            print("   • Remote sync is optional and can be enabled later")
+            print()
+            print("Enable remote logging? (y/N): ", end="", flush=True)
+            try:
+                response = input().strip().lower()
+                if response in ["y", "yes"]:  # Opt-in (default to NO)
+                    cmd_auth_login(args)
+                    print()  # blank line after auth
+                else:
+                    print("\n✓ Skipping remote logging - local-only mode")
+                    print("  You can enable remote sync later with: vibe-check auth login")
+            except (EOFError, KeyboardInterrupt):
                 print("\n✓ Skipping remote logging - local-only mode")
                 print("  You can enable remote sync later with: vibe-check auth login")
-        except (EOFError, KeyboardInterrupt):
-            print("\n✓ Skipping remote logging - local-only mode")
-            print("  You can enable remote sync later with: vibe-check auth login")
 
     # Check and auto-install MCP plugin if not present
     check_mcp_plugin()
@@ -3178,6 +3417,284 @@ def cmd_uninstall(args):
     print()
 
 
+def cmd_setup(args):
+    """Interactive setup wizard for vibe-check installation.
+
+    Orchestrates:
+    - Configuration file creation
+    - Authentication (optional)
+    - Skills installation
+    - MCP plugin installation
+    - Git hooks setup (optional)
+    - Service registration
+    - Daemon start
+
+    Args:
+        args: Parsed arguments with flags:
+            - skip_auth: Skip authentication prompt
+            - skip_git: Skip git integration setup
+            - non_interactive: Use defaults, no prompts
+            - reconfigure: Force reconfiguration
+    """
+    print("╔═══════════════════════════════════════════════╗")
+    print("║   Vibe Check Setup Wizard                     ║")
+    print("╚═══════════════════════════════════════════════╝")
+    print()
+
+    # Check prerequisites
+    print("1️⃣  Checking prerequisites...")
+
+    # Verify Claude Code is installed
+    claude_projects = Path.home() / ".claude" / "projects"
+    if not claude_projects.exists():
+        print("   ❌ Claude Code not found")
+        print()
+        print("      Vibe Check monitors Claude Code conversations.")
+        print("      Please install Claude Code first:")
+        print("      https://code.claude.com/docs/en/overview")
+        print()
+        print("      Run Claude Code at least once, then re-run: vibe-check setup")
+        return 1
+
+    print("   ✅ Claude Code detected")
+
+    # Check if already configured
+    config_path = get_config_path()
+    already_configured = config_path.exists()
+
+    # Check if service is registered
+    system = platform.system()
+    service_exists = False
+    if is_homebrew_service():
+        service_exists = True
+    elif system == "Darwin":
+        service_exists = (Path.home() / "Library/LaunchAgents/com.vibecheck.monitor.plist").exists()
+    elif system == "Linux":
+        service_exists = is_systemd_service()
+
+    if already_configured and not args.reconfigure:
+        print()
+        print("✅ Vibe Check is already configured")
+        print(f"   Config: {config_path}")
+        if service_exists:
+            print("   Service: Registered")
+        print()
+        print("To reconfigure: vibe-check setup --reconfigure")
+        print()
+        print("Current status:")
+        cmd_status(args)
+        return 0
+
+    # Configuration
+    print()
+    print("2️⃣  Configuration...")
+
+    if not config_path.exists():
+        print("   Creating default configuration...")
+        data_dir = get_data_dir()
+        data_dir.mkdir(parents=True, exist_ok=True)
+
+        default_config = {
+            "api": {"enabled": False, "url": DEFAULT_API_URL, "api_key": ""},
+            "sqlite": {
+                "enabled": True,
+                "database_path": "~/.vibe-check/vibe_check.db",
+                "user_name": os.environ.get("USER", "unknown"),
+            },
+            "monitor": {"conversation_dir": "~/.claude/projects"},
+        }
+
+        with open(config_path, "w") as f:
+            json.dump(default_config, f, indent=2)
+
+        print(f"   ✅ Config created: {config_path}")
+    else:
+        print(f"   ✅ Config exists: {config_path}")
+
+    # Authentication (optional)
+    if not args.skip_auth and not args.non_interactive:
+        print()
+        print("3️⃣  Remote Logging (Optional)...")
+        print("   Vibe Check can optionally sync conversations to a remote server")
+        print("   for web-based viewing and sharing.")
+        print()
+        print("   • All conversations are stored locally in SQLite")
+        print("   • Remote sync is optional and can be enabled later")
+        print()
+
+        response = input("   Enable remote logging? (y/N): ").strip().lower()
+
+        if response in ["y", "yes"]:
+            print()
+            cmd_auth_login(args)
+        else:
+            print("   ✅ Skipping - local-only mode")
+    elif args.skip_auth:
+        print()
+        print("3️⃣  Remote Logging...")
+        print("   ✅ Skipped (--skip-auth)")
+    else:
+        print()
+        print("3️⃣  Remote Logging...")
+        print("   ✅ Skipped (non-interactive mode)")
+
+    # Skills installation
+    print()
+    print("4️⃣  Claude Code Skills...")
+
+    interactive = not args.non_interactive
+    check_claude_skills(interactive=interactive)
+    print("   ✅ Skills configured")
+
+    # MCP plugin
+    print()
+    print("5️⃣  MCP Plugin...")
+
+    check_mcp_plugin(interactive=interactive)
+    print("   ✅ MCP plugin configured")
+
+    # Git hooks (optional)
+    if not args.skip_git and not args.non_interactive:
+        print()
+        print("6️⃣  Git Integration (Optional)...")
+        print("   Vibe Check can enhance git with:")
+        print("   • Claude session links in commit messages")
+        print("   • Full conversation transcripts as git notes")
+        print()
+
+        response = input("   Install git integration? (y/N): ").strip().lower()
+
+        if response in ["y", "yes"]:
+            print()
+            check_git_hooks(interactive=True)
+        else:
+            print("   ✅ Skipping - can install later with: vibe-check git install")
+    elif args.skip_git:
+        print()
+        print("6️⃣  Git Integration...")
+        print("   ✅ Skipped (--skip-git)")
+    else:
+        print()
+        print("6️⃣  Git Integration...")
+        print("   ✅ Skipped (non-interactive mode)")
+
+    # Service registration
+    print()
+    print("7️⃣  Service Registration...")
+
+    service_ok = register_service()
+    service_was_registered = False
+
+    # Check if LaunchAgent or systemd service was just created
+    system = platform.system()
+    if service_ok:
+        if system == "Darwin":
+            plist_path = Path.home() / "Library/LaunchAgents/com.vibecheck.monitor.plist"
+            service_was_registered = plist_path.exists() and not is_homebrew_service()
+        elif system == "Linux":
+            service_path = Path.home() / ".config/systemd/user/vibe-check.service"
+            service_was_registered = service_path.exists()
+
+    if not service_ok:
+        print("   ⚠️  Service registration had issues")
+        print("      You can start manually with: vibe-check start")
+
+    # Start daemon (skip if LaunchAgent/systemd service was just registered, as it auto-starts)
+    print()
+    print("8️⃣  Starting daemon...")
+
+    if service_was_registered:
+        print("   ⏳ Waiting for system service to start...")
+        # Give the service time to start (LaunchAgent can be slow on first boot)
+        max_wait = 10
+        for i in range(max_wait):
+            time.sleep(1)
+            pid = is_running()
+            if pid:
+                print(f"   ✅ Service started (PID: {pid})")
+                break
+        else:
+            # Service didn't start - fall back to manual start via subprocess
+            print("   ⚠️  Service didn't auto-start, starting manually...")
+            try:
+                # Use subprocess to avoid daemonize() forking issues when called from setup
+                script_dir = Path(__file__).parent
+                wrapper = script_dir / "vibe-check"
+                if not wrapper.exists():
+                    wrapper = Path.home() / ".vibe-check/vibe-check"
+
+                if wrapper.exists():
+                    subprocess.Popen([str(wrapper), "start"],
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+                    time.sleep(2)  # Give daemon time to start
+                    pid = is_running()
+                    if pid:
+                        print(f"   ✅ Daemon started (PID: {pid})")
+                    else:
+                        print("   ⚠️  Daemon is starting in background...")
+                else:
+                    print("   ⚠️  Cannot find vibe-check wrapper script")
+                    print("      Try manually: vibe-check start")
+            except Exception as e:
+                logger.error(f"Failed to start daemon: {e}")
+                print(f"   ⚠️  Failed to start daemon: {e}")
+                print("      Try manually: vibe-check start")
+    else:
+        pid = is_running()
+        if pid:
+            print(f"   ✅ Already running (PID: {pid})")
+        else:
+            # Use subprocess to avoid daemonize() forking issues when called from setup
+            try:
+                script_dir = Path(__file__).parent
+                wrapper = script_dir / "vibe-check"
+                if not wrapper.exists():
+                    wrapper = Path.home() / ".vibe-check/vibe-check"
+
+                if wrapper.exists():
+                    subprocess.Popen([str(wrapper), "start"],
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+                    time.sleep(2)  # Give daemon time to start
+                    pid = is_running()
+                    if pid:
+                        print(f"   ✅ Daemon started (PID: {pid})")
+                    else:
+                        print("   ⚠️  Daemon is starting in background...")
+                else:
+                    print("   ⚠️  Cannot find vibe-check wrapper script")
+                    print("      Try manually: vibe-check start")
+            except Exception as e:
+                logger.error(f"Failed to start daemon: {e}")
+                print(f"   ⚠️  Failed to start daemon: {e}")
+                print("      Try manually: vibe-check start")
+
+    # Success summary
+    print()
+    print("╔═══════════════════════════════════════════════╗")
+    print("║   Setup Complete!                             ║")
+    print("╚═══════════════════════════════════════════════╝")
+    print()
+
+    # Give daemon time to start
+    time.sleep(2)
+
+    # Show status
+    cmd_status(args)
+
+    print()
+    print("Next steps:")
+    print("  • Use Claude Code as normal - conversations are monitored automatically")
+    print("  • Ask Claude: 'claude stats' to see your usage")
+    print("  • Run 'vibe-check status' anytime to check the daemon")
+    print()
+
+    return 0
+
+
 def cmd_logs(args):
     """View vibe-check process logs."""
     log_paths = get_active_log_paths()
@@ -3785,6 +4302,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
+  setup         Run setup wizard (auth, skills, git, service)
   start         Start the vibe-check process in background
   stop          Stop the background process
   restart       Restart vibe-check process
@@ -3795,10 +4313,14 @@ Commands:
   auth login    Authenticate with the vibe-check server
   auth status   Show current authentication status
   auth logout   Remove stored API key
+  git install   Install git hooks (global or current repo)
+  git uninstall Remove git hooks
+  git status    Show git hooks status
   (no command)  Show status if running, or prompt to start
 
 Examples:
-  vibe-check                    # Show status or prompt to start
+  vibe-check setup              # Run interactive setup wizard
+  vibe-check setup --skip-auth  # Setup without authentication
   vibe-check auth login         # Authenticate with the server
   vibe-check start              # Start in background
   vibe-check stop               # Stop background monitor
@@ -3889,6 +4411,33 @@ Examples:
         "uninstall", help="Remove vibe-check data and Claude Code skills"
     )
     parser_uninstall.set_defaults(func=cmd_uninstall)
+
+    # Setup command
+    parser_setup = subparsers.add_parser(
+        "setup",
+        help="Run interactive setup wizard (auth, skills, git, service)"
+    )
+    parser_setup.add_argument(
+        "--skip-auth",
+        action="store_true",
+        help="Skip authentication prompt (local-only mode)"
+    )
+    parser_setup.add_argument(
+        "--skip-git",
+        action="store_true",
+        help="Skip git integration setup"
+    )
+    parser_setup.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Use defaults without prompts (for automation)"
+    )
+    parser_setup.add_argument(
+        "--reconfigure",
+        action="store_true",
+        help="Force reconfiguration even if already set up"
+    )
+    parser_setup.set_defaults(func=cmd_setup)
 
     # Git command with subcommands
     parser_git = subparsers.add_parser("git", help="Git integration commands")

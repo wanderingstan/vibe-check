@@ -3,8 +3,8 @@ class VibeCheck < Formula
 
   desc "Claude Code conversation monitoring and analytics"
   homepage "https://github.com/wanderingstan/vibe-check"
-  url "https://github.com/wanderingstan/vibe-check/archive/refs/tags/v1.1.12.tar.gz"
-  sha256 "812bcfc1c3d9f33cd6d5bf80266f4d72a5423b248e1d661bf6376cbe24366c47"
+  url "https://github.com/wanderingstan/vibe-check/archive/refs/tags/v1.1.11.tar.gz"
+  sha256 "5130c5e42e68de69133952d4995a9945c16248298fe3a87365e6069b728fb9a8"
   license "MIT"
   head "https://github.com/wanderingstan/vibe-check.git", branch: "main"
 
@@ -71,10 +71,6 @@ class VibeCheck < Formula
 
     # Make vibe-check.py executable
     chmod 0755, libexec/"vibe-check.py"
-
-    # Install MCP server to share directory
-    (share/"vibe-check/mcp-server").install Dir["mcp-server/*.py"]
-    (share/"vibe-check/mcp-server").install "mcp-server/requirements.txt" if File.exist?("mcp-server/requirements.txt")
 
     # Install skills to share directory (each skill is a directory with SKILL.md)
     (share/"vibe-check/skills").install Dir["skills/vibe-check-*"]

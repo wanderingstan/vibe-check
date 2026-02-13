@@ -17,3 +17,6 @@ config.json
 monitor.log
 .monitor.pid
 server/config.json
+
+# Test output and logs
+tests/*.log

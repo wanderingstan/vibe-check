@@ -188,17 +188,27 @@ detect_os
 # Configuration
 REPO_URL="https://github.com/wanderingstan/vibe-check"
 
-# Check if we're running from within the git repo
+# Check if we're running from within the git repo or a local copy
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SCRIPT_DIR=""
 RUNNING_FROM_REPO=false
+LOCAL_SOURCE_DIR=""
 
 if [ -n "$SCRIPT_DIR" ]; then
-    # Check if we're in a git repo with vibe-check.py at parent level
+    # Check if we're in a directory with vibe-check.py at parent level
     PARENT_DIR="$(dirname "$SCRIPT_DIR")"
-    if [ -f "$PARENT_DIR/vibe-check.py" ] && [ -d "$PARENT_DIR/.git" ]; then
-        RUNNING_FROM_REPO=true
-        INSTALL_DIR="$PARENT_DIR"
-        echo -e "${BLUE}Running from git repo: $INSTALL_DIR${NC}"
+    if [ -f "$PARENT_DIR/vibe-check.py" ] && [ -f "$PARENT_DIR/requirements.txt" ]; then
+        if [ -d "$PARENT_DIR/.git" ]; then
+            # Actual git repo - use it directly
+            RUNNING_FROM_REPO=true
+            INSTALL_DIR="$PARENT_DIR"
+            echo -e "${BLUE}Running from git repo: $INSTALL_DIR${NC}"
+        else
+            # Local directory (e.g., tarball) - copy to standard location
+            LOCAL_SOURCE_DIR="$PARENT_DIR"
+            INSTALL_DIR="$HOME/.vibe-check"
+            echo -e "${BLUE}Running from local directory: $LOCAL_SOURCE_DIR${NC}"
+            echo -e "${BLUE}Will install to: $INSTALL_DIR${NC}"
+        fi
     else
         INSTALL_DIR="$HOME/.vibe-check"
     fi
@@ -238,6 +248,20 @@ if [ -d "$INSTALL_DIR" ]; then
     # Update from git (skip if running from repo - user manages their own git)
     if [ "$RUNNING_FROM_REPO" = true ]; then
         echo -e "${GREEN}✓ Using repo directly (run 'git pull' to update)${NC}"
+    elif [ -n "$LOCAL_SOURCE_DIR" ]; then
+        # Copy updated files from local directory
+        echo -e "${BLUE}Updating files from local directory...${NC}"
+        # Copy all files except venv, config, and database to preserve user data
+        for item in "$LOCAL_SOURCE_DIR"/*; do
+            basename_item=$(basename "$item")
+            # Skip venv directories, config, database, and build artifacts
+            if [[ "$basename_item" != "venv" && "$basename_item" != ".venv" && \
+                  "$basename_item" != "config.json" && "$basename_item" != "vibe_check.db" && \
+                  "$basename_item" != "__pycache__" && "$basename_item" != ".git" ]]; then
+                cp -r "$item" "$INSTALL_DIR"/ 2>/dev/null || true
+            fi
+        done
+        echo -e "${GREEN}✓ Files updated from local directory${NC}"
     elif [ -d ".git" ]; then
         # Stash any local changes before pulling
         if ! git diff --quiet 2>/dev/null; then
@@ -341,8 +365,29 @@ if [ ! -d "$INSTALL_DIR/venv" ]; then
 
     echo -e "${GREEN}✓ All dependencies found${NC}"
 
-    # Clone repository (only if not running from repo)
-    if [ "$RUNNING_FROM_REPO" != true ]; then
+    # Get source files (clone from GitHub, copy from local dir, or use repo directly)
+    if [ "$RUNNING_FROM_REPO" = true ]; then
+        # Using git repo directly, no need to copy
+        :
+    elif [ -n "$LOCAL_SOURCE_DIR" ]; then
+        # Copy from local directory (e.g., tarball)
+        echo -e "${BLUE}Creating installation directory...${NC}"
+        mkdir -p "$INSTALL_DIR"
+
+        echo -e "${BLUE}Copying files from local directory...${NC}"
+        # Copy files, excluding virtual environments and other build artifacts
+        for item in "$LOCAL_SOURCE_DIR"/*; do
+            basename_item=$(basename "$item")
+            # Skip venv directories, Python cache, and build artifacts
+            if [[ "$basename_item" != "venv" && "$basename_item" != ".venv" && \
+                  "$basename_item" != "__pycache__" && "$basename_item" != "*.pyc" && \
+                  "$basename_item" != ".git" ]]; then
+                cp -r "$item" "$INSTALL_DIR"/ 2>/dev/null || true
+            fi
+        done
+        echo -e "${GREEN}✓ Files copied${NC}"
+    else
+        # Clone from GitHub
         echo -e "${BLUE}Creating installation directory...${NC}"
         mkdir -p "$INSTALL_DIR"
 
@@ -420,470 +465,55 @@ else
     echo -e "${GREEN}✓ Run with: $INSTALL_DIR/vibe-check${NC}"
 fi
 
-# Authentication
-if [ "$NEED_AUTH" = true ] && [ "$SKIP_AUTH" = false ]; then
+# Run setup wizard
+echo ""
+echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
+echo -e "${BLUE}║   Running Setup Wizard                ║${NC}"
+echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
+echo ""
+
+cd "$INSTALL_DIR"
+source venv/bin/activate
+
+# Build setup flags
+SETUP_FLAGS="--non-interactive"
+if [ "$SKIP_AUTH" = true ]; then
+    SETUP_FLAGS="$SETUP_FLAGS --skip-auth"
+fi
+
+# Run setup command
+if python vibe-check.py setup $SETUP_FLAGS; then
     echo ""
-    echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║   Remote Logging Configuration        ║${NC}"
-    echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "${YELLOW}Vibe Check can optionally sync your Claude Code conversations${NC}"
-    echo -e "${YELLOW}to a remote server for web-based viewing and sharing.${NC}"
-    echo ""
-    echo -e "${BLUE}• All conversations are stored locally in SQLite${NC}"
-    echo -e "${BLUE}• Remote sync is optional and can be enabled later${NC}"
+    echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║   Installation Complete!              ║${NC}"
+    echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
     echo ""
 
-    # Ask user if they want to enable remote logging
-    read -p "$(echo -e ${YELLOW}"Enable remote logging? (y/N): "${NC})" -n 1 -r
-    echo ""
-
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo ""
-        echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
-        echo -e "${BLUE}║   Authentication Required             ║${NC}"
-        echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
-        echo ""
-        echo -e "${YELLOW}Opening browser to complete authentication...${NC}"
-        echo ""
-
-        # Run the auth login flow
-        cd "$INSTALL_DIR"
-        source venv/bin/activate
-
-        if python vibe-check.py auth login; then
-            echo ""
-            echo -e "${GREEN}✓ Authentication successful!${NC}"
-            echo -e "${GREEN}✓ Remote logging enabled${NC}"
-        else
-            echo ""
-            echo -e "${YELLOW}⚠ Authentication skipped or failed.${NC}"
-            echo -e "${YELLOW}  You can authenticate later with: vibe-check auth login${NC}"
-        fi
+    if [ "$RUNNING_FROM_REPO" = true ]; then
+        echo -e "${BLUE}Commands (from repo):${NC}"
+        echo -e "  $INSTALL_DIR/vibe-check status     # Check status"
+        echo -e "  $INSTALL_DIR/vibe-check logs       # View logs"
+        echo -e "  $INSTALL_DIR/vibe-check auth login # Re-authenticate"
     else
-        echo ""
-        echo -e "${GREEN}✓ Skipping remote logging - local-only mode${NC}"
-        echo -e "${BLUE}  All conversations will be stored locally in SQLite${NC}"
-        echo -e "${BLUE}  You can enable remote sync later with: vibe-check auth login${NC}"
-
-        # Ensure config directory exists
-        mkdir -p "$HOME/.vibe-check"
-
-        # Create local-only config if it doesn't exist
-        CONFIG_FILE="$HOME/.vibe-check/config.json"
-        if [ ! -f "$CONFIG_FILE" ]; then
-            cat > "$CONFIG_FILE" <<CONFIG
-{
-  "api": {
-    "enabled": false,
-    "url": "https://vibecheck.wanderingstan.com/api",
-    "api_key": ""
-  },
-  "sqlite": {
-    "enabled": true,
-    "database_path": "~/.vibe-check/vibe_check.db",
-    "user_name": "${USER}"
-  },
-  "monitor": {
-    "conversation_dir": "~/.claude/projects"
-  }
-}
-CONFIG
-            echo -e "${GREEN}✓ Created local-only configuration${NC}"
-        fi
+        echo -e "${BLUE}Commands:${NC}"
+        echo -e "  vibe-check status      # Check status"
+        echo -e "  vibe-check logs        # View logs"
+        echo -e "  vibe-check auth login  # Re-authenticate"
     fi
-elif [ "$SKIP_AUTH" = true ]; then
-    echo -e "${YELLOW}⚠ Authentication skipped (--skip-auth)${NC}"
-    echo -e "${YELLOW}  Authenticate later with: vibe-check auth login${NC}"
-fi
-
-# Set up auto-start service (skip for repo installs)
-if [ "$RUNNING_FROM_REPO" != true ]; then
-    if [ "$OS" = "macos" ]; then
-        # macOS: Create launchd plist
-        echo -e "${BLUE}Setting up auto-start service...${NC}"
-        mkdir -p "$HOME/Library/LaunchAgents"
-
-        cat > "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.vibecheck.monitor</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$INSTALL_DIR/vibe-check</string>
-        <string>start</string>
-        <string>--foreground</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>$HOME/.vibe-check/launchd.log</string>
-    <key>StandardErrorPath</key>
-    <string>$HOME/.vibe-check/launchd.error.log</string>
-</dict>
-</plist>
-PLIST
-
-        # Ensure data directory exists
-        mkdir -p "$HOME/.vibe-check"
-
-        launchctl load "$HOME/Library/LaunchAgents/com.vibecheck.monitor.plist" 2>/dev/null || true
-        echo -e "${GREEN}✓ LaunchAgent installed (starts on login)${NC}"
-
-    elif command -v systemctl &> /dev/null; then
-        # Linux: Create systemd user service
-        echo -e "${BLUE}Setting up auto-start service...${NC}"
-        mkdir -p "$HOME/.config/systemd/user"
-
-        cat > "$HOME/.config/systemd/user/vibe-check.service" <<SERVICE
-[Unit]
-Description=Vibe Check - Claude Code Monitor
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=$INSTALL_DIR/vibe-check start --foreground
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=default.target
-SERVICE
-
-        # Try systemd user service (may fail for root or without dbus session)
-        SYSTEMD_STARTED=false
-        if systemctl --user daemon-reload 2>/dev/null; then
-            systemctl --user enable vibe-check 2>/dev/null || true
-            if systemctl --user start vibe-check 2>/dev/null; then
-                # Verify it actually started
-                sleep 1
-                if systemctl --user is-active vibe-check &>/dev/null; then
-                    SYSTEMD_STARTED=true
-                    echo -e "${GREEN}✓ Systemd service installed and started${NC}"
-                fi
-            fi
-        fi
-
-        if [ "$SYSTEMD_STARTED" = false ]; then
-            echo -e "${YELLOW}⚠ Systemd user service not available (common for root or SSH sessions)${NC}"
-            echo -e "${BLUE}Starting daemon directly...${NC}"
-            "$VIBE_CHECK_BIN" start 2>/dev/null || true
-            echo -e "${GREEN}✓ Service file installed for future logins${NC}"
-        fi
+    echo ""
+else
+    echo ""
+    echo -e "${RED}╔═══════════════════════════════════════╗${NC}"
+    echo -e "${RED}║   Setup incomplete                    ║${NC}"
+    echo -e "${RED}╚═══════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${YELLOW}You can complete setup later with:${NC}"
+    if [ "$RUNNING_FROM_REPO" = true ]; then
+        echo -e "  $INSTALL_DIR/vibe-check setup"
     else
-        # No systemd - just start the daemon directly
-        echo -e "${BLUE}Starting daemon...${NC}"
-        "$VIBE_CHECK_BIN" start 2>/dev/null || true
+        echo -e "  vibe-check setup"
     fi
-else
-    # Repo install - start daemon directly (no auto-start service)
-    echo -e "${BLUE}Starting daemon...${NC}"
-    "$VIBE_CHECK_BIN" start 2>/dev/null || true
-
-    echo ""
-    echo -e "${YELLOW}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${YELLOW}║   ⚠️  No Auto-Start Service Configured                     ║${NC}"
-    echo -e "${YELLOW}╚═══════════════════════════════════════════════════════════╝${NC}"
-    echo -e "${YELLOW}Running from git repo - auto-start service not installed.${NC}"
-    echo -e "${YELLOW}The daemon is running now, but won't restart after reboot.${NC}"
-    echo ""
-    echo -e "${BLUE}Options:${NC}"
-    echo -e "  1. Manual start each session: ${NC}$INSTALL_DIR/vibe-check start"
-    echo -e "  2. Install normally (with auto-start):${NC}"
-    echo -e "     curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash"
     echo ""
 fi
-
-# Install Claude Code skills
-echo -e "${BLUE}Installing Claude Code skills...${NC}"
-SKILLS_SRC="$INSTALL_DIR/skills"
-SKILLS_DEST="$HOME/.claude/skills"
-
-if [ -d "$SKILLS_SRC" ]; then
-    mkdir -p "$SKILLS_DEST"
-
-    # Copy skill directories (each skill is a directory with SKILL.md inside)
-    for skill_dir in "$SKILLS_SRC"/*/; do
-        skill_name=$(basename "$skill_dir")
-        # Skip if not a directory or no SKILL.md inside
-        if [ ! -d "$skill_dir" ] || [ ! -f "$skill_dir/SKILL.md" ]; then
-            continue
-        fi
-
-        dest_dir="$SKILLS_DEST/$skill_name"
-        # Backup existing skill directory if present
-        if [ -d "$dest_dir" ]; then
-            backup="$SKILLS_DEST/.backup-$(date +%s)-$skill_name"
-            mv "$dest_dir" "$backup"
-        fi
-        # Also clean up old flat format if present
-        if [ -f "$SKILLS_DEST/${skill_name}.md" ]; then
-            rm "$SKILLS_DEST/${skill_name}.md"
-        fi
-        cp -r "$skill_dir" "$dest_dir"
-    done
-
-    echo -e "${GREEN}✓ Claude Code skills installed to ~/.claude/skills/${NC}"
-else
-    echo -e "${YELLOW}⚠ Skills directory not found, skipping skills installation${NC}"
-fi
-
-# Install MCP plugin for Claude Code integration
-PLUGIN_SCRIPT="$INSTALL_DIR/scripts/install-plugin.sh"
-if [ -f "$PLUGIN_SCRIPT" ]; then
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BLUE}Installing MCP Plugin...${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    bash "$PLUGIN_SCRIPT"
-fi
-
-# Git hooks integration (optional)
-GIT_HOOK_SCRIPT="$INSTALL_DIR/scripts/install-git-hook.sh"
-if [ -f "$GIT_HOOK_SCRIPT" ]; then
-    echo ""
-    echo -e "${BLUE}╔═══════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║   Git Integration (Optional)          ║${NC}"
-    echo -e "${BLUE}╚═══════════════════════════════════════╝${NC}"
-    echo ""
-    echo -e "${YELLOW}Vibe Check can integrate with git to enhance your commit workflow:${NC}"
-    echo ""
-    echo -e "${BLUE}1. Commit Message Enhancement:${NC}"
-    echo -e "   Automatically adds links to relevant Claude sessions in commit messages"
-    echo -e "   (based on branch and recent activity)"
-    echo ""
-    echo -e "${BLUE}2. Git Notes (Full Transcripts):${NC}"
-    echo -e "   Attaches complete Claude conversation transcripts as git notes"
-    echo -e "   (can be disabled with VIBE_CHECK_NOTES=0)"
-    echo ""
-
-    # Ask about commit message enhancement
-    read -p "$(echo -e ${YELLOW}"Install commit message enhancement? (y/N): "${NC})" -n 1 -r
-    echo ""
-    INSTALL_PREPARE_COMMIT=false
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        INSTALL_PREPARE_COMMIT=true
-    fi
-
-    # Ask about git notes
-    read -p "$(echo -e ${YELLOW}"Install git notes (full transcripts)? (y/N): "${NC})" -n 1 -r
-    echo ""
-    INSTALL_POST_COMMIT=false
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        INSTALL_POST_COMMIT=true
-    fi
-
-    # Helper function to install hooks with chaining support
-    install_hook_with_chaining() {
-        local source_hook="$1"
-        local target_hook="$2"
-        local hook_name="$3"
-
-        if [ -f "$target_hook" ] && [ ! -L "$target_hook" ]; then
-            # Existing hook found - offer to chain
-            echo -e "${YELLOW}⚠ $hook_name hook already exists${NC}"
-            echo -e "  [c] Chain (keep existing, run vibe-check after) - Recommended"
-            echo -e "  [r] Replace (backup old hook)"
-            echo -e "  [s] Skip"
-            read -p "$(echo -e ${YELLOW}"Choice [c/r/s]: "${NC})" -n 1 -r
-            echo ""
-
-            if [[ $REPLY =~ ^[Cc]$ ]]; then
-                # Chain: rename existing to .local, install ours
-                mv "$target_hook" "${target_hook}.local"
-                chmod +x "${target_hook}.local"
-                ln -sf "$source_hook" "$target_hook"
-                chmod +x "$target_hook"
-                echo -e "${GREEN}✓ Installed $hook_name hook (chained with existing)${NC}"
-            elif [[ $REPLY =~ ^[Rr]$ ]]; then
-                # Replace: backup and install ours
-                cp "$target_hook" "${target_hook}.backup"
-                ln -sf "$source_hook" "$target_hook"
-                chmod +x "$target_hook"
-                echo -e "${GREEN}✓ Installed $hook_name hook (old hook backed up)${NC}"
-            else
-                echo -e "${YELLOW}Skipped $hook_name hook${NC}"
-            fi
-        else
-            # No existing hook or it's already a symlink
-            ln -sf "$source_hook" "$target_hook"
-            chmod +x "$target_hook"
-            echo -e "${GREEN}✓ Installed $hook_name hook${NC}"
-        fi
-    }
-
-    # If user wants either feature, we need to know where to install
-    if [ "$INSTALL_PREPARE_COMMIT" = true ] || [ "$INSTALL_POST_COMMIT" = true ]; then
-        echo ""
-        echo -e "${BLUE}Where would you like to install git hooks?${NC}"
-        echo -e "  [g] Global (all repos) - Recommended"
-        echo -e "  [c] Current directory only"
-        echo -e "  [b] Both (global + current directory)"
-        echo -e "  [s] Skip for now"
-        echo ""
-        read -p "$(echo -e ${YELLOW}"Choice [g/c/b/s]: "${NC})" -n 1 -r
-        echo ""
-
-        INSTALL_GLOBAL=false
-        INSTALL_LOCAL=false
-
-        if [[ $REPLY =~ ^[Gg]$ ]]; then
-            INSTALL_GLOBAL=true
-        elif [[ $REPLY =~ ^[Cc]$ ]]; then
-            INSTALL_LOCAL=true
-        elif [[ $REPLY =~ ^[Bb]$ ]]; then
-            INSTALL_GLOBAL=true
-            INSTALL_LOCAL=true
-        fi
-
-        # Install global hooks
-        if [ "$INSTALL_GLOBAL" = true ]; then
-            GLOBAL_HOOKS_DIR="$HOME/.vibe-check/git-hooks"
-            mkdir -p "$GLOBAL_HOOKS_DIR"
-
-            echo ""
-            echo -e "${BLUE}Installing global git hooks...${NC}"
-
-            if [ "$INSTALL_PREPARE_COMMIT" = true ]; then
-                SOURCE="$INSTALL_DIR/scripts/prepare-commit-msg"
-                TARGET="$GLOBAL_HOOKS_DIR/prepare-commit-msg"
-                ln -sf "$SOURCE" "$TARGET"
-                chmod +x "$TARGET"
-                echo -e "${GREEN}✓ Installed prepare-commit-msg (commit messages with links to Claude sessions)${NC}"
-            fi
-
-            if [ "$INSTALL_POST_COMMIT" = true ]; then
-                SOURCE="$INSTALL_DIR/scripts/post-commit"
-                TARGET="$GLOBAL_HOOKS_DIR/post-commit"
-                ln -sf "$SOURCE" "$TARGET"
-                chmod +x "$TARGET"
-                echo -e "${GREEN}✓ Installed post-commit (git notes with full text of Claude sessions)${NC}"
-            fi
-
-            # Set global hooks path
-            CURRENT_HOOKS_PATH=$(git config --global --get core.hooksPath 2>/dev/null || echo "")
-            if [ -n "$CURRENT_HOOKS_PATH" ] && [ "$CURRENT_HOOKS_PATH" != "$GLOBAL_HOOKS_DIR" ]; then
-                echo ""
-                echo -e "${YELLOW}⚠ Git global core.hooksPath is already set to: $CURRENT_HOOKS_PATH${NC}"
-                read -p "$(echo -e ${YELLOW}"Replace with $GLOBAL_HOOKS_DIR? [y/N]: "${NC})" -n 1 -r
-                echo ""
-                if [[ $REPLY =~ ^[Yy]$ ]]; then
-                    git config --global core.hooksPath "$GLOBAL_HOOKS_DIR"
-                    echo -e "${GREEN}✓ Updated global hooks path${NC}"
-                else
-                    echo -e "${YELLOW}Skipped setting global hooks path${NC}"
-                    echo -e "${BLUE}To set manually: git config --global core.hooksPath $GLOBAL_HOOKS_DIR${NC}"
-                fi
-            else
-                git config --global core.hooksPath "$GLOBAL_HOOKS_DIR"
-                echo -e "${GREEN}✓ Set global hooks path${NC}"
-            fi
-
-            echo ""
-            echo -e "${BLUE}Global hooks installed to: $GLOBAL_HOOKS_DIR${NC}"
-            echo -e "${BLUE}These hooks will apply to all git repositories${NC}"
-            if [ "$INSTALL_POST_COMMIT" = true ]; then
-                echo ""
-                echo -e "${BLUE}To disable git notes: export VIBE_CHECK_NOTES=0${NC}"
-            fi
-        fi
-
-        # Install local hooks (current directory)
-        if [ "$INSTALL_LOCAL" = true ]; then
-            if [ -d ".git" ]; then
-                HOOK_DIR=".git/hooks"
-                echo ""
-                echo -e "${BLUE}Installing hooks to current repository...${NC}"
-
-                if [ "$INSTALL_PREPARE_COMMIT" = true ]; then
-                    SOURCE="$INSTALL_DIR/scripts/prepare-commit-msg"
-                    TARGET="$HOOK_DIR/prepare-commit-msg"
-                    install_hook_with_chaining "$SOURCE" "$TARGET" "prepare-commit-msg"
-                fi
-
-                if [ "$INSTALL_POST_COMMIT" = true ]; then
-                    SOURCE="$INSTALL_DIR/scripts/post-commit"
-                    TARGET="$HOOK_DIR/post-commit"
-                    install_hook_with_chaining "$SOURCE" "$TARGET" "post-commit"
-                fi
-
-                echo ""
-                echo -e "${BLUE}Local hooks installed to: $HOOK_DIR${NC}"
-            else
-                echo -e "${RED}✗ Current directory is not a git repository${NC}"
-                echo -e "${BLUE}To install in a specific repo later:${NC}"
-                echo -e "  cd <repo> && $INSTALL_DIR/scripts/install-git-hook.sh"
-            fi
-        fi
-
-        # Show management commands
-        if [ "$INSTALL_GLOBAL" = true ] || [ "$INSTALL_LOCAL" = true ]; then
-            echo ""
-            echo -e "${BLUE}To manage git hooks:${NC}"
-            if [ "$RUNNING_FROM_REPO" = true ]; then
-                echo -e "  $INSTALL_DIR/vibe-check git status     # Check hook status"
-                echo -e "  $INSTALL_DIR/vibe-check git install    # Install to current repo"
-                echo -e "  $INSTALL_DIR/vibe-check git uninstall  # Remove from current repo"
-            else
-                echo -e "  vibe-check git status     # Check hook status"
-                echo -e "  vibe-check git install    # Install to current repo"
-                echo -e "  vibe-check git uninstall  # Remove from current repo"
-            fi
-        else
-            echo ""
-            echo -e "${YELLOW}Git integration skipped${NC}"
-            echo -e "${BLUE}To install later:${NC}"
-            if [ "$RUNNING_FROM_REPO" = true ]; then
-                echo -e "  $INSTALL_DIR/vibe-check git install [--global]"
-            else
-                echo -e "  vibe-check git install [--global]"
-            fi
-        fi
-    else
-        echo ""
-        echo -e "${YELLOW}Git integration skipped${NC}"
-        echo -e "${BLUE}To install later:${NC}"
-        if [ "$RUNNING_FROM_REPO" = true ]; then
-            echo -e "  $INSTALL_DIR/vibe-check git install [--global]"
-        else
-            echo -e "  vibe-check git install [--global]"
-        fi
-    fi
-fi
-
-# Installation complete
-echo ""
-echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   Installation Complete!              ║${NC}"
-echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
-echo ""
-
-# Give daemon time to process existing files before showing status
-sleep 2
-
-# Show current status
-echo -e "${BLUE}Current status:${NC}"
-"$VIBE_CHECK_BIN" status
-echo ""
-
-if [ "$RUNNING_FROM_REPO" = true ]; then
-    echo -e "${BLUE}Commands (from repo):${NC}"
-    echo -e "  $INSTALL_DIR/vibe-check stop       # Stop monitoring"
-    echo -e "  $INSTALL_DIR/vibe-check status     # Check status"
-    echo -e "  $INSTALL_DIR/vibe-check logs       # View logs"
-    echo -e "  $INSTALL_DIR/vibe-check auth login # Re-authenticate"
-else
-    echo -e "${BLUE}Commands:${NC}"
-    echo -e "  vibe-check stop      # Stop monitoring"
-    echo -e "  vibe-check status    # Check status"
-    echo -e "  vibe-check logs      # View logs"
-    echo -e "  vibe-check auth login # Re-authenticate"
-fi
-echo ""
 
 rm -f "$INSTALL_LOG"

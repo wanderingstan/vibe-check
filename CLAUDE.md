@@ -29,9 +29,10 @@ A Python monitoring client that watches Claude Code conversation files and store
 │
 ├── scripts/
 │   ├── install.sh             # Main installer (daemon)
-│   ├── install-plugin.sh      # Plugin installer (MCP + skills)
 │   ├── release-homebrew.sh    # Homebrew release
-│   └── query-helper.sh        # Safe DB querying
+│   ├── query-helper.sh        # Safe DB querying
+│   ├── prepare-commit-msg     # Git hook (commit messages)
+│   └── post-commit            # Git hook (git notes)
 │
 ├── skills/                    # Claude Code skills
 │   ├── claude-stats/          # Usage statistics
@@ -73,12 +74,28 @@ file_name (PK), last_line, updated_at
 ## Commands
 
 ```bash
+# Setup (run once after installation)
+vibe-check setup                 # Interactive setup wizard
+vibe-check setup --skip-auth     # Setup without remote sync
+vibe-check setup --non-interactive  # Automated setup (CI/testing)
+
 # Daemon management
 vibe-check start       # Start background monitoring
 vibe-check stop        # Stop monitoring
 vibe-check restart     # Restart
 vibe-check status      # Check if running
 vibe-check logs        # View logs
+
+# Authentication
+vibe-check auth login  # Enable remote sync
+vibe-check auth status # Check auth status
+vibe-check auth logout # Disable remote sync
+
+# Git integration
+vibe-check git install --global    # Install hooks globally
+vibe-check git install             # Install to current repo
+vibe-check git status              # Check hook status
+vibe-check git uninstall --global  # Remove global hooks
 
 # Direct Python usage
 python vibe-check.py                     # Start monitoring
