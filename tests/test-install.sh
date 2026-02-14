@@ -395,32 +395,52 @@ test_skills_installed() {
 test_command_availability() {
     log_verbose "Checking vibe-check command..."
 
-    # Check wrapper script exists
-    if [ ! -f "$HOME/.vibe-check/vibe-check" ]; then
+    # Detect installation type and set wrapper path
+    local wrapper_script
+    if [ -f "$HOME/.vibe-check/vibe-check" ]; then
+        # Standard installation
+        wrapper_script="$HOME/.vibe-check/vibe-check"
+        log_verbose "Checking standard installation wrapper"
+    elif [ -f "$REPO_ROOT/vibe-check" ]; then
+        # Git-based installation
+        wrapper_script="$REPO_ROOT/vibe-check"
+        log_verbose "Checking git-based installation wrapper"
+    else
         log_error "vibe-check wrapper script not created"
         return 1
     fi
 
-    if [ ! -x "$HOME/.vibe-check/vibe-check" ]; then
-        log_error "vibe-check wrapper script not executable"
+    if [ ! -x "$wrapper_script" ]; then
+        log_error "vibe-check wrapper script not executable: $wrapper_script"
         return 1
     fi
 
     # Test command execution
-    if ! "$HOME/.vibe-check/vibe-check" --version &>/dev/null; then
+    if ! "$wrapper_script" --version &>/dev/null; then
         log_error "vibe-check command fails to execute"
         return 1
     fi
 
-    log_verbose "✓ vibe-check command works"
+    log_verbose "✓ vibe-check command works at $wrapper_script"
     return 0
 }
 
 test_python_dependencies() {
     log_verbose "Checking Python dependencies..."
 
+    # Detect installation type and set venv path
+    local venv_path
+    if [ -d "$HOME/.vibe-check/venv" ]; then
+        venv_path="$HOME/.vibe-check/venv"
+    elif [ -d "$REPO_ROOT/venv" ]; then
+        venv_path="$REPO_ROOT/venv"
+    else
+        log_error "Virtual environment not found"
+        return 1
+    fi
+
     # Activate venv and check imports
-    source "$HOME/.vibe-check/venv/bin/activate"
+    source "$venv_path/bin/activate"
 
     local required_modules=("watchdog" "requests" "sqlite3")
 
