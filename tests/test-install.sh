@@ -552,6 +552,17 @@ test_database_operations() {
 
     local db_file="$HOME/.vibe-check/vibe_check.db"
 
+    # Skip if database doesn't exist yet (expected in quick mode/fresh environments)
+    if [ ! -f "$db_file" ]; then
+        if [ "$QUICK_MODE" = true ]; then
+            log_info "Skipping database operations test (database not yet created)"
+            return 0
+        else
+            log_error "Database file not found for operations test"
+            return 1
+        fi
+    fi
+
     # Test read-only access
     if ! sqlite3 "file:$db_file?mode=ro" "SELECT COUNT(*) FROM conversation_events" &>/dev/null; then
         log_error "Failed to query database in read-only mode"
