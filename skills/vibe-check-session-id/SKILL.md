@@ -1,15 +1,47 @@
 ---
-name: get-session-id
+name: vibe-check-session-id
 description: Get the current Claude Code session ID and log file path. Use when user says "get session id", "what is my session id", "current session", "session info", or "what session is this".
 ---
 
 # Get Current Session ID
 
-**Purpose:** Retrieve the current Claude Code session ID and log file path by emitting a unique marker and querying the vibe-check database.
+**Purpose:** Retrieve the current Claude Code session ID and log file path.
 
 ---
 
-## Database Location
+## Primary Method: Use MCP Tool
+
+**RECOMMENDED:** Use the vibe-check MCP tool to get session information directly.
+
+### Step 1: Call the MCP Tool
+
+Use the `mcp__vibe-check__vibe_session` tool with no parameters to get the current (most recent) session:
+
+```
+Use mcp__vibe-check__vibe_session with no parameters
+```
+
+This will return:
+- Session ID
+- Log file path
+- Session start/end times
+- Message counts
+- Repository and branch information
+
+### Step 2: Present Results
+
+Display the session information to the user in a clear format.
+
+---
+
+## Fallback Method: Legacy Marker Technique
+
+**IMPORTANT:** Only use this if the MCP tool is unavailable or fails. This is a last resort fallback.
+
+<details>
+<summary>Click to expand fallback instructions</summary>
+
+### Database Location
 
 To find the database location, run:
 ```bash
@@ -20,7 +52,7 @@ The default location is: `~/.vibe-check/vibe_check.db`
 
 **Note:** If the status shows no PID, vibe-check is not running and the database may be stale. Start it with `vibe-check start`.
 
-## Important: Use Read-Only Mode
+### Important: Use Read-Only Mode
 
 To avoid database locks when the monitor is running, always use read-only mode:
 
@@ -28,11 +60,9 @@ To avoid database locks when the monitor is running, always use read-only mode:
 sqlite3 "file:/path/to/vibe_check.db?mode=ro" "SELECT ..."
 ```
 
----
+### How the Fallback Works
 
-## How It Works
-
-This skill uses a clever technique to find the current session:
+This technique uses a clever workaround:
 
 1. **Generate a unique marker** - Create a random string that won't appear anywhere else
 2. **Emit the marker** - Output it into the conversation so vibe-check logs it
@@ -40,11 +70,9 @@ This skill uses a clever technique to find the current session:
 4. **Query for the marker** - Search `conversation_events.event_data` for the unique string
 5. **Extract session info** - Return `event_session_id` and `file_name` from the matching row
 
----
+### Execution Steps
 
-## Execution Steps
-
-### Step 1: Generate and Emit Marker
+#### Step 1: Generate and Emit Marker
 
 Generate a unique marker string using this format:
 ```
@@ -62,7 +90,7 @@ Session marker: VIBE_SESSION_MARKER_a7f3b2c9e4d1f8a6
 
 This ensures the marker gets logged by vibe-check.
 
-### Step 2: Wait for Logging
+#### Step 2: Wait for Logging
 
 Wait 2 seconds to allow vibe-check to process and log the marker:
 
@@ -70,7 +98,7 @@ Wait 2 seconds to allow vibe-check to process and log the marker:
 sleep 2
 ```
 
-### Step 3: Query the Database
+#### Step 3: Query the Database
 
 Find the marker in the database:
 
@@ -88,7 +116,7 @@ LIMIT 1;
 
 Replace `[your-marker-here]` with the actual marker string you generated.
 
-### Step 4: Present Results
+#### Step 4: Present Results
 
 ---
 

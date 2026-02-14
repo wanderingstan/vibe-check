@@ -1,5 +1,5 @@
 ---
-name: share-session
+name: vibe-check-share
 description: Create a public share link for the current Claude Code session. Use when user says "share session", "share this session", "get share link", "create share link", or "share my work".
 ---
 
@@ -11,15 +11,55 @@ description: Create a public share link for the current Claude Code session. Use
 
 ## Overview
 
-This skill:
-1. Gets the current session ID (using the marker technique)
-2. Reads the API key from vibe-check config
-3. Calls the vibecheck API to create a public share
-4. Displays the shareable URL
+This skill uses the vibe-check MCP tools to:
+1. Get the current session ID using `mcp__vibe-check__vibe_session`
+2. Create a share link using `mcp__vibe-check__vibe_share`
+
+If the MCP tools are not available (fallback only), it can use the legacy marker technique.
 
 ---
 
-## Execution Steps
+## Primary Method: Use MCP Tools
+
+### Step 1: Get Current Session ID
+
+Call the MCP tool to get the current session information:
+
+```
+Use mcp__vibe-check__vibe_session with no parameters
+```
+
+This will return session information including the session ID.
+
+### Step 2: Create Share Link
+
+Call the MCP share tool with the session ID:
+
+```
+Use mcp__vibe-check__vibe_share with:
+- session_id: [the session ID from step 1]
+- title: (optional) Custom title for the share
+- slug: (optional) Custom URL slug
+```
+
+The tool will:
+- Read API configuration from ~/.vibe-check/config.json
+- Create the share via the vibecheck API
+- Return the shareable URL
+- Handle retries if the session hasn't synced yet
+
+### Step 3: Display the Result
+
+The MCP tool will return the share URL. Present it to the user.
+
+---
+
+## Fallback Method: Legacy Marker Technique
+
+**IMPORTANT:** Only use this if the MCP tools are unavailable or fail. This is a last resort.
+
+<details>
+<summary>Click to expand fallback instructions</summary>
 
 ### Step 1: Generate and Emit Session Marker
 
@@ -106,37 +146,7 @@ Share URL: https://vibecheck.wanderingstan.com/s/[token]
 Anyone with this link can view your conversation from this session.
 ```
 
----
-
-## Complete Script
-
-Here's the full sequence (run each step, substituting your values):
-
-```bash
-# Step 1: Generate marker (do this in your head, output it in response)
-# Example: VIBE_SESSION_MARKER_a7f3b2c9e4d1f8a6
-
-# Step 2: Wait
-sleep 2
-
-# Step 3: Get session ID
-SESSION_ID=$(sqlite3 "file:$HOME/.vibe-check/vibe_check.db?mode=ro" \
-  "SELECT event_session_id FROM conversation_events WHERE event_data LIKE '%VIBE_SESSION_MARKER_a7f3b2c9e4d1f8a6%' ORDER BY event_timestamp DESC LIMIT 1;")
-
-# Step 4: Get config
-API_KEY=$(cat ~/.vibe-check/config.json | jq -r '.api.api_key')
-API_URL=$(cat ~/.vibe-check/config.json | jq -r '.api.url // "https://vibecheck.wanderingstan.com"')
-
-# Step 5: Create share
-curl -s -X POST "${API_URL}/api/shares" \
-  -H "X-API-Key: ${API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"scope_type\": \"session\",
-    \"scope_session_id\": \"${SESSION_ID}\",
-    \"visibility\": \"public\"
-  }"
-```
+</details>
 
 ---
 
@@ -149,40 +159,29 @@ This means the session ID doesn't have any events owned by this user. Possible c
 - The API key belongs to a different user
 - The session is too new and hasn't been synced
 
-**Fix:** Run `vibe-check status` to check if remote sync is working.
+**Fix:** Run `vibe-check status` to check if remote sync is working. The MCP tool automatically retries for a few seconds to handle sync delays.
 
-### "No session ID found"
+### "Not authenticated" or "Remote API is disabled"
 
-The marker wasn't logged. Possible causes:
-- vibe-check monitor isn't running
-- Database path is different
+No API key found in config, or remote sync is disabled.
 
-**Fix:** Check `vibe-check status` to verify the monitor is running and get the correct database path.
+**Fix:** Run `vibe-check auth login` to authenticate and enable remote sync.
 
-### "Not authenticated"
+### MCP Tools Not Available
 
-No API key found in config.
-
-**Fix:** Run `vibe-check auth login` to authenticate.
+If the MCP server isn't running or configured, fall back to the legacy marker technique above.
 
 ---
 
 ## Advanced Options
 
-You can customize the share by adding optional fields:
+When using the MCP tool, you can customize the share:
 
-```bash
-curl -s -X POST "${API_URL}/api/shares" \
-  -H "X-API-Key: ${API_KEY}" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"scope_type\": \"session\",
-    \"scope_session_id\": \"${SESSION_ID}\",
-    \"visibility\": \"public\",
-    \"title\": \"My awesome coding session\",
-    \"description\": \"Building a feature with Claude\",
-    \"slug\": \"my-cool-session\"
-  }"
+```
+Use mcp__vibe-check__vibe_share with:
+- session_id: [session ID]
+- title: "My awesome coding session"
+- slug: "my-cool-session"
 ```
 
-With a slug, the URL becomes: `https://vibecheck.wanderingstan.com/s/my-cool-session`
+With a custom slug, the URL becomes: `https://vibecheck.wanderingstan.com/s/my-cool-session`
