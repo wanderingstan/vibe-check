@@ -331,12 +331,19 @@ test_database_created() {
 
     local db_file="$HOME/.vibe-check/vibe_check.db"
 
+    # In quick mode or fresh environments, database may not exist yet (created on first conversation)
     if [ ! -f "$db_file" ]; then
-        log_error "Database file not created"
-        return 1
+        if [ "$QUICK_MODE" = true ]; then
+            log_info "Database not yet created (expected in fresh environment)"
+            log_verbose "Database will be created when first conversation is processed"
+            return 0
+        else
+            log_error "Database file not created"
+            return 1
+        fi
     fi
 
-    # Check database schema
+    # Check database schema if it exists
     local tables=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table';" 2>/dev/null)
 
     if ! echo "$tables" | grep -q "conversation_events"; then
