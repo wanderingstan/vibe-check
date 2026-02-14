@@ -492,13 +492,24 @@ test_reinstall_update() {
 test_daemon_start_stop() {
     log_verbose "Testing daemon functionality..."
 
+    # Detect installation type and set command path
+    local vibe_check_cmd
+    if [ -f "$HOME/.vibe-check/vibe-check" ]; then
+        vibe_check_cmd="$HOME/.vibe-check/vibe-check"
+    elif [ -f "$REPO_ROOT/vibe-check" ]; then
+        vibe_check_cmd="$REPO_ROOT/vibe-check"
+    else
+        log_error "vibe-check command not found"
+        return 1
+    fi
+
     # Simplified test: just verify daemon is running and responsive
     # Full start/stop cycle is difficult to test with LaunchAgent's KeepAlive=true
 
     # Check if daemon is running (case-insensitive)
-    if ! "$HOME/.vibe-check/vibe-check" status 2>&1 | grep -iq "running"; then
+    if ! "$vibe_check_cmd" status 2>&1 | grep -iq "running"; then
         # Try to start daemon
-        START_OUTPUT=$("$HOME/.vibe-check/vibe-check" start 2>&1)
+        START_OUTPUT=$("$vibe_check_cmd" start 2>&1)
         if ! echo "$START_OUTPUT" | grep -iEq "(started|Starting monitor|already running)"; then
             log_error "Failed to ensure daemon is running"
             log_verbose "Start output: $START_OUTPUT"
@@ -508,7 +519,7 @@ test_daemon_start_stop() {
     fi
 
     # Verify daemon is running (case-insensitive)
-    STATUS_OUTPUT=$("$HOME/.vibe-check/vibe-check" status 2>&1)
+    STATUS_OUTPUT=$("$vibe_check_cmd" status 2>&1)
     if ! echo "$STATUS_OUTPUT" | grep -iq "running"; then
         log_error "Daemon not running"
         log_verbose "Status output: $STATUS_OUTPUT"
