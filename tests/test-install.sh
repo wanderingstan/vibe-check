@@ -490,6 +490,11 @@ test_reinstall_update() {
 # ============================================================================
 
 test_daemon_start_stop() {
+    if [ "$QUICK_MODE" = true ]; then
+        log_info "Skipping daemon test (quick mode)"
+        return 0
+    fi
+
     log_verbose "Testing daemon functionality..."
 
     # Detect installation type and set command path
