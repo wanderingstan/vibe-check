@@ -250,19 +250,40 @@ test_fresh_install() {
 test_installation_directories() {
     log_verbose "Checking installation directories..."
 
-    # Check main installation directory
+    # Detect installation type: git-based or standard
+    local install_dir
+    if [ -f "$HOME/.vibe-check/vibe-check.py" ]; then
+        # Standard installation (Homebrew or copied files)
+        install_dir="$HOME/.vibe-check"
+        log_verbose "Detected standard installation at $install_dir"
+    elif [ -f "$REPO_ROOT/vibe-check.py" ] && [ -d "$REPO_ROOT/.git" ]; then
+        # Git-based installation (running from repo)
+        install_dir="$REPO_ROOT"
+        log_verbose "Detected git-based installation at $install_dir"
+    else
+        log_error "Could not determine installation directory"
+        return 1
+    fi
+
+    # Check main installation directory exists
+    if [ ! -d "$install_dir" ]; then
+        log_error "Installation directory not found: $install_dir"
+        return 1
+    fi
+
+    # Check config directory always exists
     if [ ! -d "$HOME/.vibe-check" ]; then
-        log_error "Installation directory not created"
+        log_error "Config directory not created at $HOME/.vibe-check"
         return 1
     fi
 
     # Check key files and directories
     local required_paths=(
-        "$HOME/.vibe-check/vibe-check.py"
-        "$HOME/.vibe-check/requirements.txt"
-        "$HOME/.vibe-check/venv"
-        "$HOME/.vibe-check/venv/bin/activate"
-        "$HOME/.vibe-check/venv/bin/python"
+        "$install_dir/vibe-check.py"
+        "$install_dir/requirements.txt"
+        "$install_dir/venv"
+        "$install_dir/venv/bin/activate"
+        "$install_dir/venv/bin/python"
     )
 
     for path in "${required_paths[@]}"; do
