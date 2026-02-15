@@ -31,11 +31,12 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "Sources/VibeCheck"
-        ),
-        .testTarget(
-            name: "VibeCheckTests",
-            dependencies: ["VibeCheck"],
-            path: "Tests/VibeCheckTests"
         )
+        // Tests temporarily disabled - directory not yet created
+        // .testTarget(
+        //     name: "VibeCheckTests",
+        //     dependencies: ["VibeCheck"],
+        //     path: "Tests/VibeCheckTests"
+        // )
     ]
 )

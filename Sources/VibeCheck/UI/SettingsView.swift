@@ -10,6 +10,7 @@ struct SettingsView: View {
     @AppStorage("apiEnabled") private var apiEnabled = false
     @AppStorage("apiURL") private var apiURL = "https://vibecheck.wanderingstan.com/api"
     @AppStorage("apiKey") private var apiKey = ""
+    @AppStorage("githubHandle") private var githubHandle = ""
 
     // Authentication state
     @State private var isAuthenticating = false
@@ -44,8 +45,8 @@ struct SettingsView: View {
                 }
         }
         .padding(20)
-        .frame(minWidth: 500, idealWidth: 550, maxWidth: 700,
-               minHeight: 500, idealHeight: 550, maxHeight: 800)
+        .frame(minWidth: 600, idealWidth: 650, maxWidth: 800,
+               minHeight: 650, idealHeight: 700, maxHeight: 900)
     }
 
     // MARK: - General Tab
@@ -290,11 +291,12 @@ struct SettingsView: View {
     // MARK: - Integration Tab
 
     private var integrationTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Claude Code Integration")
-                .font(.headline)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Claude Code Integration")
+                    .font(.headline)
 
-            Divider()
+                Divider()
 
             // MCP Server section
             VStack(alignment: .leading, spacing: 12) {
@@ -328,6 +330,53 @@ struct SettingsView: View {
                             .font(.caption)
                         }
                     }
+                }
+            }
+
+            Divider()
+
+            // Guest Messaging section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Guest Messaging")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+
+                Text("Allow others to send messages to your Claude Code session")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 12) {
+                    Text("GitHub Username:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(width: 120, alignment: .trailing)
+
+                    TextField("username", text: $githubHandle)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+
+                    if !githubHandle.isEmpty {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    }
+                }
+
+                if !githubHandle.isEmpty {
+                    HStack {
+                        Image(systemName: "info.circle")
+                            .foregroundColor(.blue)
+                            .font(.caption)
+                        Text("Polling for guest messages every 30 seconds. Use the vibe_guest_messages MCP tool to check messages.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 4)
+                } else {
+                    Text("Set your GitHub username to enable guest messaging. This allows others to send you messages that appear in your Claude Code session via the vibe_guest_messages tool.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 4)
                 }
             }
 
@@ -369,8 +418,9 @@ struct SettingsView: View {
             }
 
             Spacer()
+            }
+            .padding()
         }
-        .padding()
     }
 
     // MARK: - About Tab

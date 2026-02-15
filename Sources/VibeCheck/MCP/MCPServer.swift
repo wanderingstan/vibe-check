@@ -5,15 +5,34 @@ import Foundation
 actor MCPServer {
     private let dbPath: String
     private var isRunning = false
+    private var guestPoller: GuestSessionPoller?
 
     init(dbPath: String) {
         self.dbPath = dbPath
+
+        // Initialize guest session poller if configured
+        let defaults = UserDefaults.standard
+        if let githubHandle = defaults.string(forKey: "githubHandle"), !githubHandle.isEmpty {
+            let apiURL = defaults.string(forKey: "apiURL") ?? "https://vibecheck.wanderingstan.com"
+            // Remove /api suffix if present, we'll add it in the poller
+            let baseURL = apiURL.hasSuffix("/api") ? String(apiURL.dropLast(4)) : apiURL
+            self.guestPoller = GuestSessionPoller(apiBaseURL: baseURL, githubHandle: githubHandle)
+            print("Guest session poller initialized for handle: \(githubHandle)", to: &stderrStream)
+        } else {
+            print("Guest session poller not initialized: GitHub handle not configured", to: &stderrStream)
+        }
     }
 
     /// Start the MCP server (runs until stdin closes)
     func run() async throws {
         isRunning = true
         print("MCP Server started - reading from stdin...", to: &stderrStream)
+
+        // Start guest session polling if configured
+        if let poller = guestPoller {
+            await poller.startPolling()
+            print("Guest session polling started", to: &stderrStream)
+        }
 
         // Read from stdin line by line
         while isRunning {
@@ -27,6 +46,11 @@ actor MCPServer {
             }
 
             await handleRequest(line)
+        }
+
+        // Stop guest session polling
+        if let poller = guestPoller {
+            await poller.stopPolling()
         }
 
         print("MCP Server stopped", to: &stderrStream)
@@ -96,6 +120,8 @@ actor MCPServer {
                 output = try await VibeSQL.execute(args: args, dbPath: dbPath)
             case "vibe_view":
                 output = try await VibeView.execute(args: args, dbPath: dbPath)
+            case "vibe_guest_messages":
+                output = try await VibeGuestMessages.execute(args: args, poller: guestPoller)
             default:
                 throw MCPError.unknownTool(toolName)
             }

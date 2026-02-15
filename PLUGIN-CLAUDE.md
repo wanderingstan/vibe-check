@@ -14,6 +14,7 @@ Use these tools to query your conversation history:
 | `vibe_recent` | Recent sessions and activity | `vibe_recent(period="today")` |
 | `vibe_session` | Get session information | `vibe_session()` |
 | `vibe_share` | Create shareable session link | `vibe_share(session_id="...")` |
+| `vibe_guest_messages` | Check for guest messages sent to your session | `vibe_guest_messages(action="check")` |
 | `vibe_sql` | Execute raw SQL queries (read-only) | `vibe_sql(query="SELECT * FROM conversation_events LIMIT 5")` |
 
 ## Natural Language Triggers
@@ -25,6 +26,7 @@ You can also respond to natural language queries:
 - **"what tools do I use"** / **"tool analysis"** -> Use `vibe_tools` tool
 - **"what have I been working on"** / **"recent work"** -> Use `vibe_recent` tool
 - **"share this session"** -> Use `vibe_share` tool
+- **"check my messages"** / **"any guest messages?"** -> Use `vibe_guest_messages` tool
 - **"vibe sql ..."** / **"query database"** -> Use `vibe_sql` tool
 
 ## Tool Parameters
@@ -54,6 +56,15 @@ You can also respond to natural language queries:
 - `session_id` (required): Session to share
 - `title` (optional): Share title
 - `slug` (optional): Custom URL slug
+
+### vibe_guest_messages
+- `action` (optional): Action to perform (default: "check")
+  - `"check"`: View unacknowledged messages
+  - `"ack"` or `"acknowledge"`: Mark messages as read and clear from server
+  - `"status"`: Show polling status
+  - `"refresh"`: Force immediate poll
+
+**Note:** Guest messages are automatically polled every 30 seconds. Configure your GitHub username in VibeCheck Settings to enable this feature.
 
 ### vibe_sql
 - `query` (required): SQL SELECT query to execute
