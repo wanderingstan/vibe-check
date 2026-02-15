@@ -411,18 +411,6 @@ log show --predicate 'process == "VibeCheck"' --style compact
 
 ## Known Issues
 
-### Unit Tests Use Real Database
-
-Currently, Swift unit tests use the real database file at `~/Library/Application Support/VibeCheck/vibe_check.db` instead of an in-memory database. This causes:
-
-- Tests may fail if app is running
-- Test data pollutes production database
-- Tests are not isolated
-
-**Workaround**: Stop VibeCheck app before running tests, or use VM tests for validation.
-
-**Fix needed**: Modify `DatabaseManager` to accept a database path parameter and use `:memory:` for tests.
-
 ### Performance Tests Are Non-Deterministic
 
 The `measure` blocks in performance tests depend on system load. Results may vary.

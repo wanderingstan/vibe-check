@@ -2,31 +2,66 @@ import Foundation
 import GRDB
 
 /// Main database manager using GRDB
-/// Thread-safe actor that manages SQLite connection pool
+/// Thread-safe actor that manages SQLite connection
 actor DatabaseManager {
-    private var dbPool: DatabasePool?
+    // Use DatabaseWriter protocol to support both Pool (file) and Queue (in-memory)
+    private var dbWriter: any DatabaseWriter
     private let dbPath: URL
     private let userName: String
+    private let isInMemory: Bool
 
-    init(userName: String? = nil) throws {
-        // Database location: ~/Library/Application Support/VibeCheck/vibe_check.db
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let vibeCheckDir = appSupport.appendingPathComponent("VibeCheck", isDirectory: true)
-
-        // Create directory if needed
-        try FileManager.default.createDirectory(at: vibeCheckDir, withIntermediateDirectories: true)
-
-        self.dbPath = vibeCheckDir.appendingPathComponent("vibe_check.db")
+    /// Initialize DatabaseManager
+    /// - Parameters:
+    ///   - userName: Username for event tracking (defaults to current user)
+    ///   - databasePath: Custom database path, or nil for default location.
+    ///                   Use ":memory:" for in-memory database (testing).
+    init(userName: String? = nil, databasePath: String? = nil) throws {
         self.userName = userName ?? NSUserName()
 
-        print("📊 Database location: \(dbPath.path)")
+        // Determine database path
+        let finalPath: String
+        let inMemory: Bool
 
-        // Initialize database pool
+        if let customPath = databasePath {
+            if customPath == ":memory:" {
+                // In-memory database for testing
+                finalPath = ":memory:"
+                self.dbPath = URL(fileURLWithPath: "/tmp/memory.db") // Placeholder URL
+                inMemory = true
+            } else {
+                // Custom path provided
+                finalPath = customPath
+                self.dbPath = URL(fileURLWithPath: customPath)
+                inMemory = false
+            }
+        } else {
+            // Default location: ~/Library/Application Support/VibeCheck/vibe_check.db
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            let vibeCheckDir = appSupport.appendingPathComponent("VibeCheck", isDirectory: true)
+
+            // Create directory if needed
+            try FileManager.default.createDirectory(at: vibeCheckDir, withIntermediateDirectories: true)
+
+            self.dbPath = vibeCheckDir.appendingPathComponent("vibe_check.db")
+            finalPath = dbPath.path
+            inMemory = false
+        }
+
+        self.isInMemory = inMemory
+        print("📊 Database location: \(finalPath)")
+
+        // Initialize appropriate database type
         var config = Configuration()
         config.defaultTransactionKind = .immediate
         config.busyMode = .timeout(30.0)
 
-        self.dbPool = try DatabasePool(path: dbPath.path, configuration: config)
+        if inMemory {
+            // In-memory databases must use DatabaseQueue (WAL not supported)
+            self.dbWriter = try DatabaseQueue(path: finalPath, configuration: config)
+        } else {
+            // File-based databases use DatabasePool (supports WAL for concurrency)
+            self.dbWriter = try DatabasePool(path: finalPath, configuration: config)
+        }
     }
 
     /// Must be called after init to set up the database schema
@@ -35,9 +70,7 @@ actor DatabaseManager {
     }
 
     private func setupDatabaseInternal() async throws {
-        guard let pool = dbPool else { return }
-
-        try await pool.write { db in
+        try await dbWriter.write { db in
             // Note: WAL mode and busy_timeout are automatically configured by GRDB's DatabasePool
             // No need to set PRAGMA journal_mode or synchronous here
 
@@ -177,9 +210,7 @@ actor DatabaseManager {
         gitRemoteURL: String? = nil,
         gitCommitHash: String? = nil
     ) async throws -> Int64? {
-        guard let pool = dbPool else { return nil }
-
-        return try await pool.write { [userName] db in
+        return try await dbWriter.write { [userName] db in
             var event = ConversationEvent(
                 fileName: fileName,
                 lineNumber: lineNumber,
@@ -203,9 +234,7 @@ actor DatabaseManager {
 
     /// Insert multiple events in a batch transaction
     func insertEventsBatch(_ events: [(fileName: String, lineNumber: Int, eventData: String, gitRemoteURL: String?, gitCommitHash: String?)]) async throws -> Int {
-        guard let pool = dbPool else { return 0 }
-
-        return try await pool.write { [userName] db in
+        return try await dbWriter.write { [userName] db in
             var insertedCount = 0
 
             for event in events {
@@ -235,9 +264,7 @@ actor DatabaseManager {
 
     /// Mark an event as synced to remote API
     func markEventSynced(eventId: Int64) async throws {
-        guard let pool = dbPool else { return }
-
-        try await pool.write { db in
+        try await dbWriter.write { db in
             try db.execute(
                 sql: "UPDATE conversation_events SET synced_at = ? WHERE id = ?",
                 arguments: [Date(), eventId]
@@ -247,10 +274,9 @@ actor DatabaseManager {
 
     /// Mark multiple events as synced in a batch
     func markEventsSynced(eventIds: [Int64]) async throws {
-        guard let pool = dbPool else { return }
         guard !eventIds.isEmpty else { return }
 
-        try await pool.write { db in
+        try await dbWriter.write { db in
             let placeholders = eventIds.map { _ in "?" }.joined(separator: ",")
             let sql = "UPDATE conversation_events SET synced_at = ? WHERE id IN (\(placeholders))"
 
@@ -263,9 +289,7 @@ actor DatabaseManager {
 
     /// Get unsynced events for remote API sync
     func getUnsyncedEvents(limit: Int = 50) async throws -> [ConversationEvent] {
-        guard let pool = dbPool else { return [] }
-
-        return try await pool.read { db in
+        return try await dbWriter.read { db in
             try ConversationEvent
                 .filter(Column("synced_at") == nil)
                 .order(Column("id").desc)
@@ -278,9 +302,7 @@ actor DatabaseManager {
 
     /// Get events for a specific session
     func getSessionEvents(sessionId: String) async throws -> [ConversationEvent] {
-        guard let pool = dbPool else { return [] }
-
-        return try await pool.read { db in
+        return try await dbWriter.read { db in
             try ConversationEvent
                 .filter(Column("event_session_id") == sessionId)
                 .order(Column("event_timestamp"))
@@ -290,9 +312,7 @@ actor DatabaseManager {
 
     /// Search events using FTS5
     func searchEvents(query: String, limit: Int = 20) async throws -> [ConversationEvent] {
-        guard let pool = dbPool else { return [] }
-
-        return try await pool.read { db in
+        return try await dbWriter.read { db in
             let sql = """
                 SELECT ce.*
                 FROM messages_fts fts
@@ -315,9 +335,7 @@ actor DatabaseManager {
 
     /// Get database statistics
     func getStatistics() async throws -> (totalEvents: Int, totalSessions: Int, unsyncedCount: Int) {
-        guard let pool = dbPool else { return (0, 0, 0) }
-
-        return try await pool.read { db in
+        return try await dbWriter.read { db in
             let totalEvents = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM conversation_events") ?? 0
             let totalSessions = try Int.fetchOne(db, sql: "SELECT COUNT(DISTINCT event_session_id) FROM conversation_events") ?? 0
             let unsyncedCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM conversation_events WHERE synced_at IS NULL") ?? 0

@@ -8,14 +8,19 @@ import GRDB
 /// Each test gets a fresh database instance with full schema.
 class DatabaseTestCase: XCTestCase {
     var dbManager: DatabaseManager!
+    private var lineNumberCounter: Int = 0
 
     override func setUp() async throws {
         try await super.setUp()
 
         // Create in-memory database for testing
         // This is fast and isolated - perfect for unit tests
-        dbManager = try DatabaseManager(userName: "test_user")
+        // Each test gets a fresh, empty database
+        dbManager = try DatabaseManager(userName: "test_user", databasePath: ":memory:")
         try await dbManager.setupDatabase()
+
+        // Reset line number counter for each test
+        lineNumberCounter = 0
     }
 
     override func tearDown() async throws {
@@ -29,7 +34,7 @@ class DatabaseTestCase: XCTestCase {
     ///
     /// - Parameters:
     ///   - fileName: Name of the conversation file
-    ///   - lineNumber: Line number in the file
+    ///   - lineNumber: Line number in the file (auto-increments if not specified)
     ///   - sessionId: Session identifier
     ///   - eventType: Type of event (message, tool_use, etc.)
     ///   - content: Optional message content
@@ -38,12 +43,16 @@ class DatabaseTestCase: XCTestCase {
     @discardableResult
     func insertTestEvent(
         fileName: String = "test.jsonl",
-        lineNumber: Int = 1,
+        lineNumber: Int? = nil,
         sessionId: String = "test-session",
         eventType: String = "message",
         content: String? = nil,
         model: String? = nil
     ) async throws -> Int64 {
+        // Auto-increment line number to avoid UNIQUE constraint violations
+        lineNumberCounter += 1
+        let actualLineNumber = lineNumber ?? lineNumberCounter
+
         var eventDict: [String: Any] = [
             "type": eventType,
             "sessionId": sessionId,
@@ -63,7 +72,7 @@ class DatabaseTestCase: XCTestCase {
 
         let eventId = try await dbManager.insertEvent(
             fileName: fileName,
-            lineNumber: lineNumber,
+            lineNumber: actualLineNumber,
             eventData: eventData
         )
         return eventId ?? 0
