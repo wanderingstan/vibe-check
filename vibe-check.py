@@ -1741,18 +1741,7 @@ def check_claude_skills(interactive=True):
         # No skills found
         return
 
-    # Check if any skills are missing (check for SKILL.md inside directory)
-    missing_skills = []
-    for skill in skills_to_check:
-        skill_file = skills_dir / skill / "SKILL.md"
-        if not skill_file.exists():
-            missing_skills.append(skill)
-
-    # If all skills are installed, nothing to do
-    if not missing_skills:
-        return
-
-    # First, try Homebrew location (auto-install silently)
+    # If running from Homebrew, always sync all skills (simpler and more reliable)
     homebrew_skills_dir = Path("/opt/homebrew/share/vibe-check/skills")
     if homebrew_skills_dir.exists():
         import shutil
@@ -1760,13 +1749,13 @@ def check_claude_skills(interactive=True):
         skills_dir.mkdir(parents=True, exist_ok=True)
         installed_count = 0
         updated_count = 0
-        # Copy skill directories (new structure: vibe-check-*/SKILL.md)
+        # Always copy all skill directories to ensure they're up-to-date
         for skill_src_dir in homebrew_skills_dir.glob("vibe-check-*"):
             if skill_src_dir.is_dir():
                 dest = skills_dir / skill_src_dir.name
                 try:
                     if dest.exists():
-                        # Update existing skill
+                        # Always update existing skills
                         shutil.rmtree(dest)
                         shutil.copytree(skill_src_dir, dest)
                         updated_count += 1
@@ -1782,6 +1771,17 @@ def check_claude_skills(interactive=True):
             logger.info(
                 f"Installed {installed_count} new skills, updated {updated_count} existing skills to {skills_dir}"
             )
+        return
+
+    # For non-Homebrew installations, check if any skills are missing
+    missing_skills = []
+    for skill in skills_to_check:
+        skill_file = skills_dir / skill / "SKILL.md"
+        if not skill_file.exists():
+            missing_skills.append(skill)
+
+    # If all skills are installed, nothing to do (non-Homebrew)
+    if not missing_skills:
         return
 
     # Non-interactive mode: auto-install by copying skills directly
