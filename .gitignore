@@ -31,3 +31,6 @@ DerivedData/
 
 # Swift Package Manager
 Package.resolved
+
+# Build outputs
+dist/
