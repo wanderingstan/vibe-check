@@ -9,7 +9,7 @@ actor GuestSessionPoller {
     private var pollingTask: Task<Void, Never>?
     private let pollInterval: TimeInterval = 30
 
-    init(apiBaseURL: String = "https://vibecheck.wanderingstan.com", githubHandle: String) {
+    init(apiBaseURL: String = "https://www.slashvibe.dev", githubHandle: String) {
         self.apiBaseURL = apiBaseURL
         self.githubHandle = githubHandle
     }

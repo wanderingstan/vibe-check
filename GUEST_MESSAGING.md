@@ -38,7 +38,7 @@ The Guest Messaging feature enables real-time communication with your Claude Cod
 
 ### GET /api/session/guest
 
-**URL**: `https://vibecheck.wanderingstan.com/api/session/guest`
+**URL**: `https://www.slashvibe.dev/api/session/guest`
 
 **Parameters**:
 - `handle` (required): GitHub username of the recipient
@@ -189,7 +189,7 @@ And Claude will call the appropriate MCP tool.
 ### UserDefaults Keys
 
 - `githubHandle`: GitHub username for guest messaging
-- `apiURL`: Base URL for API (default: `https://vibecheck.wanderingstan.com`)
+- `apiURL`: Base URL for guest session API (default: `https://www.slashvibe.dev`)
 
 ### PLUGIN-CLAUDE.md
 
@@ -219,7 +219,7 @@ Updated with new tool documentation:
 
 1. **Send a test message** (via API or web interface):
    ```bash
-   curl -X POST https://vibecheck.wanderingstan.com/api/session/guest \
+   curl -X POST https://www.slashvibe.dev/api/session/guest \
      -H "Content-Type: application/json" \
      -d '{
        "from": "testuser",
@@ -244,7 +244,7 @@ Updated with new tool documentation:
 
 4. **Verify cleared**:
    ```bash
-   curl "https://vibecheck.wanderingstan.com/api/session/guest?handle=YOUR_GITHUB_HANDLE"
+   curl "https://www.slashvibe.dev/api/session/guest?handle=YOUR_GITHUB_HANDLE"
    # Should return empty messages array
    ```
 
@@ -323,7 +323,7 @@ echo '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"vibe_guest_messag
 
 4. **Test API directly**:
    ```bash
-   curl "https://vibecheck.wanderingstan.com/api/session/guest?handle=YOUR_HANDLE"
+   curl "https://www.slashvibe.dev/api/session/guest?handle=YOUR_HANDLE"
    ```
 
 ### Polling Errors

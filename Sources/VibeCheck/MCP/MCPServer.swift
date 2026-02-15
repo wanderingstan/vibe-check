@@ -13,7 +13,7 @@ actor MCPServer {
         // Initialize guest session poller if configured
         let defaults = UserDefaults.standard
         if let githubHandle = defaults.string(forKey: "githubHandle"), !githubHandle.isEmpty {
-            let apiURL = defaults.string(forKey: "apiURL") ?? "https://vibecheck.wanderingstan.com"
+            let apiURL = defaults.string(forKey: "apiURL") ?? "https://www.slashvibe.dev"
             // Remove /api suffix if present, we'll add it in the poller
             let baseURL = apiURL.hasSuffix("/api") ? String(apiURL.dropLast(4)) : apiURL
             self.guestPoller = GuestSessionPoller(apiBaseURL: baseURL, githubHandle: githubHandle)
