@@ -69,6 +69,9 @@ class VibeCheck < Formula
     libexec.install "vibe-check.py", "secret_detector.py"
     (libexec/"scripts").install "scripts/query-helper.sh"
 
+    # Install git hooks to libexec/scripts
+    (libexec/"scripts").install "scripts/prepare-commit-msg", "scripts/post-commit"
+
     # Make vibe-check.py executable
     chmod 0755, libexec/"vibe-check.py"
 

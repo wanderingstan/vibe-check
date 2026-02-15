@@ -3831,28 +3831,122 @@ Please be proactive about reading relevant files and suggesting fixes."""
 
 def cmd_git_install(args):
     """Install git hooks to current repo or globally."""
-    install_script = Path(__file__).parent / "scripts" / "install-git-hook.sh"
+    import shutil
+    import stat
 
-    if not install_script.exists():
-        print("❌ Install script not found")
-        print(f"   Expected: {install_script}")
+    # Find source hook files
+    source_dir = Path(__file__).parent / "scripts"
+
+    # List of hooks to install: (filename, description, skip_if_no_notes)
+    hooks = [
+        ("prepare-commit-msg", "Commit messages", False),
+        ("post-commit", "Git notes", True),  # Skip if --no-notes
+    ]
+
+    # Check all source hooks exist
+    missing_hooks = []
+    for hook_name, _, _ in hooks:
+        hook_source = source_dir / hook_name
+        if not hook_source.exists():
+            missing_hooks.append(hook_name)
+
+    if missing_hooks:
+        print("❌ Hook source files not found:")
+        for hook in missing_hooks:
+            expected = source_dir / hook
+            print(f"   {expected}")
         return
 
-    # Build command arguments
-    cmd_args = [str(install_script)]
-
+    # Determine target directory
     if args.global_install:
-        cmd_args.append("--global")
+        # Global installation
+        target_dir = Path.home() / ".vibe-check" / "git-hooks"
+        target_dir.mkdir(parents=True, exist_ok=True)
 
-    if hasattr(args, 'no_notes') and args.no_notes:
-        cmd_args.append("--no-notes")
+        print("🌍 Installing git hooks globally...")
+        print(f"   Hooks directory: {target_dir}")
+    else:
+        # Local repository installation
+        repo_path = Path(args.path) if hasattr(args, 'path') and args.path else Path.cwd()
+        target_dir = repo_path / ".git" / "hooks"
 
-    if hasattr(args, 'path') and args.path:
-        cmd_args.append(args.path)
+        if not target_dir.exists():
+            print("❌ Not a git repository")
+            print(f"   No .git/hooks directory found at: {repo_path}")
+            return
 
-    # Run install script
-    result = subprocess.run(cmd_args)
-    sys.exit(result.returncode)
+        print(f"📁 Installing git hooks to current repository...")
+        print(f"   Repository: {repo_path.name}")
+
+    # Install each hook
+    installed_hooks = []
+    skip_notes = hasattr(args, 'no_notes') and args.no_notes
+
+    for hook_name, description, skip_if_no_notes in hooks:
+        # Skip post-commit if --no-notes
+        if skip_if_no_notes and skip_notes:
+            print(f"⏭️  Skipping {hook_name} (--no-notes)")
+            continue
+
+        source = source_dir / hook_name
+        target = target_dir / hook_name
+
+        # Handle chaining: if hook exists and isn't ours, rename to .local
+        if target.exists():
+            # Check if it's already a vibe-check hook
+            is_vibe_check_hook = False
+            if target.is_symlink():
+                is_vibe_check_hook = "vibe-check" in str(target.resolve())
+
+            if not is_vibe_check_hook:
+                # Preserve existing hook by renaming to .local
+                local_hook = target.with_suffix('.local')
+                if not local_hook.exists():
+                    print(f"   Preserving existing {hook_name} as {hook_name}.local")
+                    target.rename(local_hook)
+                else:
+                    print(f"   ⚠️  Both {hook_name} and {hook_name}.local exist")
+                    print(f"      Backing up {hook_name} to {hook_name}.backup")
+                    target.rename(target.with_suffix('.backup'))
+
+        # Create symlink (or copy if symlink fails)
+        try:
+            if target.exists():
+                target.unlink()
+            target.symlink_to(source)
+        except (OSError, NotImplementedError):
+            # Fallback to copy if symlink not supported
+            shutil.copy2(source, target)
+
+        # Make executable
+        target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+        print(f"✅ Installed {hook_name}")
+        installed_hooks.append((hook_name, description))
+
+    # For global installation, set git config
+    if args.global_install and installed_hooks:
+        result = subprocess.run(
+            ["git", "config", "--global", "core.hooksPath", str(target_dir)],
+            capture_output=True
+        )
+        if result.returncode == 0:
+            print(f"\n✅ Git configured to use global hooks")
+            print(f"   All repositories will now use hooks from: {target_dir}")
+        else:
+            print(f"\n⚠️  Failed to set git config")
+            print(f"   Manually run: git config --global core.hooksPath {target_dir}")
+
+    # Show what was installed
+    if installed_hooks:
+        print(f"\n🎉 Installation complete!")
+        for hook_name, description in installed_hooks:
+            print(f"   {description}: ✅ Enabled")
+
+        if not args.global_install:
+            print(f"\n💡 Tip: Use --global to install hooks for all repositories")
+    else:
+        print(f"\n⚠️  No hooks were installed")
 
 
 def cmd_git_uninstall(args):
