@@ -1080,6 +1080,7 @@ class ConversationMonitor(FileSystemEventHandler):
         self.base_dir = base_dir
         self.sqlite_manager = sqlite_manager
         self.debug_filter_project = debug_filter_project
+        self.http_timeout = 30.0  # Timeout for HTTP requests (seconds)
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -1100,7 +1101,6 @@ class ConversationMonitor(FileSystemEventHandler):
         self.sync_thread: Optional[threading.Thread] = None
         self.sync_running = False
         self.sync_backoff_delay = 0.1  # Start at 100ms between requests
-        self.http_timeout = 30.0  # Timeout for HTTP requests (seconds)
         self.last_sync_attempt = None  # Timestamp of last sync attempt for health monitoring
 
         # Log configuration summary
