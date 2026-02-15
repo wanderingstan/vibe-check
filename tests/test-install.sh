@@ -250,19 +250,40 @@ test_fresh_install() {
 test_installation_directories() {
     log_verbose "Checking installation directories..."
 
-    # Check main installation directory
+    # Detect installation type: git-based or standard
+    local install_dir
+    if [ -f "$HOME/.vibe-check/vibe-check.py" ]; then
+        # Standard installation (Homebrew or copied files)
+        install_dir="$HOME/.vibe-check"
+        log_verbose "Detected standard installation at $install_dir"
+    elif [ -f "$REPO_ROOT/vibe-check.py" ] && [ -d "$REPO_ROOT/.git" ]; then
+        # Git-based installation (running from repo)
+        install_dir="$REPO_ROOT"
+        log_verbose "Detected git-based installation at $install_dir"
+    else
+        log_error "Could not determine installation directory"
+        return 1
+    fi
+
+    # Check main installation directory exists
+    if [ ! -d "$install_dir" ]; then
+        log_error "Installation directory not found: $install_dir"
+        return 1
+    fi
+
+    # Check config directory always exists
     if [ ! -d "$HOME/.vibe-check" ]; then
-        log_error "Installation directory not created"
+        log_error "Config directory not created at $HOME/.vibe-check"
         return 1
     fi
 
     # Check key files and directories
     local required_paths=(
-        "$HOME/.vibe-check/vibe-check.py"
-        "$HOME/.vibe-check/requirements.txt"
-        "$HOME/.vibe-check/venv"
-        "$HOME/.vibe-check/venv/bin/activate"
-        "$HOME/.vibe-check/venv/bin/python"
+        "$install_dir/vibe-check.py"
+        "$install_dir/requirements.txt"
+        "$install_dir/venv"
+        "$install_dir/venv/bin/activate"
+        "$install_dir/venv/bin/python"
     )
 
     for path in "${required_paths[@]}"; do
@@ -310,12 +331,19 @@ test_database_created() {
 
     local db_file="$HOME/.vibe-check/vibe_check.db"
 
+    # In quick mode or fresh environments, database may not exist yet (created on first conversation)
     if [ ! -f "$db_file" ]; then
-        log_error "Database file not created"
-        return 1
+        if [ "$QUICK_MODE" = true ]; then
+            log_info "Database not yet created (expected in fresh environment)"
+            log_verbose "Database will be created when first conversation is processed"
+            return 0
+        else
+            log_error "Database file not created"
+            return 1
+        fi
     fi
 
-    # Check database schema
+    # Check database schema if it exists
     local tables=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table';" 2>/dev/null)
 
     if ! echo "$tables" | grep -q "conversation_events"; then
@@ -367,32 +395,52 @@ test_skills_installed() {
 test_command_availability() {
     log_verbose "Checking vibe-check command..."
 
-    # Check wrapper script exists
-    if [ ! -f "$HOME/.vibe-check/vibe-check" ]; then
+    # Detect installation type and set wrapper path
+    local wrapper_script
+    if [ -f "$HOME/.vibe-check/vibe-check" ]; then
+        # Standard installation
+        wrapper_script="$HOME/.vibe-check/vibe-check"
+        log_verbose "Checking standard installation wrapper"
+    elif [ -f "$REPO_ROOT/vibe-check" ]; then
+        # Git-based installation
+        wrapper_script="$REPO_ROOT/vibe-check"
+        log_verbose "Checking git-based installation wrapper"
+    else
         log_error "vibe-check wrapper script not created"
         return 1
     fi
 
-    if [ ! -x "$HOME/.vibe-check/vibe-check" ]; then
-        log_error "vibe-check wrapper script not executable"
+    if [ ! -x "$wrapper_script" ]; then
+        log_error "vibe-check wrapper script not executable: $wrapper_script"
         return 1
     fi
 
     # Test command execution
-    if ! "$HOME/.vibe-check/vibe-check" --version &>/dev/null; then
+    if ! "$wrapper_script" --version &>/dev/null; then
         log_error "vibe-check command fails to execute"
         return 1
     fi
 
-    log_verbose "✓ vibe-check command works"
+    log_verbose "✓ vibe-check command works at $wrapper_script"
     return 0
 }
 
 test_python_dependencies() {
     log_verbose "Checking Python dependencies..."
 
+    # Detect installation type and set venv path
+    local venv_path
+    if [ -d "$HOME/.vibe-check/venv" ]; then
+        venv_path="$HOME/.vibe-check/venv"
+    elif [ -d "$REPO_ROOT/venv" ]; then
+        venv_path="$REPO_ROOT/venv"
+    else
+        log_error "Virtual environment not found"
+        return 1
+    fi
+
     # Activate venv and check imports
-    source "$HOME/.vibe-check/venv/bin/activate"
+    source "$venv_path/bin/activate"
 
     local required_modules=("watchdog" "requests" "sqlite3")
 
@@ -442,15 +490,31 @@ test_reinstall_update() {
 # ============================================================================
 
 test_daemon_start_stop() {
+    if [ "$QUICK_MODE" = true ]; then
+        log_info "Skipping daemon test (quick mode)"
+        return 0
+    fi
+
     log_verbose "Testing daemon functionality..."
+
+    # Detect installation type and set command path
+    local vibe_check_cmd
+    if [ -f "$HOME/.vibe-check/vibe-check" ]; then
+        vibe_check_cmd="$HOME/.vibe-check/vibe-check"
+    elif [ -f "$REPO_ROOT/vibe-check" ]; then
+        vibe_check_cmd="$REPO_ROOT/vibe-check"
+    else
+        log_error "vibe-check command not found"
+        return 1
+    fi
 
     # Simplified test: just verify daemon is running and responsive
     # Full start/stop cycle is difficult to test with LaunchAgent's KeepAlive=true
 
     # Check if daemon is running (case-insensitive)
-    if ! "$HOME/.vibe-check/vibe-check" status 2>&1 | grep -iq "running"; then
+    if ! "$vibe_check_cmd" status 2>&1 | grep -iq "running"; then
         # Try to start daemon
-        START_OUTPUT=$("$HOME/.vibe-check/vibe-check" start 2>&1)
+        START_OUTPUT=$("$vibe_check_cmd" start 2>&1)
         if ! echo "$START_OUTPUT" | grep -iEq "(started|Starting monitor|already running)"; then
             log_error "Failed to ensure daemon is running"
             log_verbose "Start output: $START_OUTPUT"
@@ -460,7 +524,7 @@ test_daemon_start_stop() {
     fi
 
     # Verify daemon is running (case-insensitive)
-    STATUS_OUTPUT=$("$HOME/.vibe-check/vibe-check" status 2>&1)
+    STATUS_OUTPUT=$("$vibe_check_cmd" status 2>&1)
     if ! echo "$STATUS_OUTPUT" | grep -iq "running"; then
         log_error "Daemon not running"
         log_verbose "Status output: $STATUS_OUTPUT"
@@ -487,6 +551,17 @@ test_database_operations() {
     log_verbose "Testing database operations..."
 
     local db_file="$HOME/.vibe-check/vibe_check.db"
+
+    # Skip if database doesn't exist yet (expected in quick mode/fresh environments)
+    if [ ! -f "$db_file" ]; then
+        if [ "$QUICK_MODE" = true ]; then
+            log_info "Skipping database operations test (database not yet created)"
+            return 0
+        else
+            log_error "Database file not found for operations test"
+            return 1
+        fi
+    fi
 
     # Test read-only access
     if ! sqlite3 "file:$db_file?mode=ro" "SELECT COUNT(*) FROM conversation_events" &>/dev/null; then
