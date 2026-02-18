@@ -55,13 +55,15 @@ actor JSONLParser {
 
         print("📄 Processing \(newLines.count) new line(s) from \(fileName)")
 
-        // Get git info once for all events in this file
-        let (gitRemoteURL, gitCommitHash) = await gitInfoProvider.getGitInfo(for: fileURL.deletingLastPathComponent())
-
         // Collect events for batch insert
+        // Git info fetched lazily from first event's cwd
+        // (fileURL.deletingLastPathComponent() is ~/.claude/projects/... which is not a git repo)
         var eventsBatch: [(fileName: String, lineNumber: Int, eventData: String, gitRemoteURL: String?, gitCommitHash: String?)] = []
         var skippedCount = 0
         var finalLineNumber = lastLine
+        var gitRemoteURL: String? = nil
+        var gitCommitHash: String? = nil
+        var gitInfoFetched = false
 
         // Process each new line
         for (index, line) in newLines.enumerated() {
@@ -84,8 +86,17 @@ actor JSONLParser {
             }
 
             do {
-                // Validate it's valid JSON (we'll store the raw string)
-                _ = try JSONSerialization.jsonObject(with: jsonData, options: [])
+                // Parse JSON to extract cwd for git info
+                let jsonObject = try JSONSerialization.jsonObject(with: jsonData, options: []) as? [String: Any]
+
+                // Get git info once from the first event's working directory
+                if !gitInfoFetched, let cwd = jsonObject?["cwd"] as? String {
+                    let cwdURL = URL(fileURLWithPath: cwd)
+                    let (remote, commit) = await gitInfoProvider.getGitInfo(for: cwdURL)
+                    gitRemoteURL = remote
+                    gitCommitHash = commit
+                    gitInfoFetched = true
+                }
 
                 // Add to batch (store raw JSON string, not parsed object)
                 eventsBatch.append((
