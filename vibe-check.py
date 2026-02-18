@@ -42,7 +42,7 @@ LOG_BACKUP_COUNT = 3  # Keep 3 rotated files (.log.1, .log.2, .log.3)
 logger = logging.getLogger("vibe-check")
 
 # Version
-VERSION = "1.1.13"
+VERSION = "1.1.17"
 
 # Default production API URL
 DEFAULT_API_URL = "https://vibecheck.wanderingstan.com/api"
@@ -1080,6 +1080,7 @@ class ConversationMonitor(FileSystemEventHandler):
         self.base_dir = base_dir
         self.sqlite_manager = sqlite_manager
         self.debug_filter_project = debug_filter_project
+        self.http_timeout = 30.0  # Timeout for HTTP requests (seconds)
         self.session = requests.Session()
         self.session.headers.update(
             {
@@ -1100,6 +1101,7 @@ class ConversationMonitor(FileSystemEventHandler):
         self.sync_thread: Optional[threading.Thread] = None
         self.sync_running = False
         self.sync_backoff_delay = 0.1  # Start at 100ms between requests
+        self.last_sync_attempt = None  # Timestamp of last sync attempt for health monitoring
 
         # Log configuration summary
         destinations = []
@@ -1116,7 +1118,7 @@ class ConversationMonitor(FileSystemEventHandler):
         """Test API connection. Non-fatal if connection fails."""
         try:
             # Try the configured URL first
-            response = self.session.get(f"{self.api_endpoint}/health")
+            response = self.session.get(f"{self.api_endpoint}/health", timeout=self.http_timeout)
             response.raise_for_status()
             logger.info(f"Connected to API server: {self.api_endpoint}")
             return True
@@ -1125,7 +1127,7 @@ class ConversationMonitor(FileSystemEventHandler):
             if "/api.php" not in self.api_endpoint:
                 try:
                     self.api_endpoint = f"{self.api_url}/api.php"
-                    response = self.session.get(f"{self.api_endpoint}/health")
+                    response = self.session.get(f"{self.api_endpoint}/health", timeout=self.http_timeout)
                     response.raise_for_status()
                     logger.info(f"Connected to API server: {self.api_endpoint}")
                     return True
@@ -1182,8 +1184,11 @@ class ConversationMonitor(FileSystemEventHandler):
             events_batch = []
             final_line_number = last_line
 
-            # Get git info once for all events in this file
-            git_remote_url, git_commit_hash = get_git_info(file_path.parent)
+            # Git info fetched lazily from first event's cwd
+            # (file_path.parent is ~/.claude/projects/... which is not a git repo)
+            git_remote_url = None
+            git_commit_hash = None
+            git_info_fetched = False
 
             for idx, line in enumerate(new_lines):
                 line_number = last_line + idx + 1
@@ -1197,6 +1202,13 @@ class ConversationMonitor(FileSystemEventHandler):
                 try:
                     # Parse JSON
                     event_data = json.loads(line)
+
+                    # Get git info once from the first event's working directory
+                    if not git_info_fetched:
+                        working_dir = event_data.get("cwd")
+                        if working_dir:
+                            git_remote_url, git_commit_hash = get_git_info(Path(working_dir))
+                            git_info_fetched = True
 
                     # Redact secrets before storage
                     event_data = self.redact_secrets_from_event(event_data)
@@ -1368,6 +1380,33 @@ class ConversationMonitor(FileSystemEventHandler):
             self.sync_thread.join(timeout=5)
             logger.info("Background sync worker stopped")
 
+    def is_worker_healthy(self, max_idle_minutes: int = 15) -> tuple[bool, str]:
+        """Check if the sync worker is healthy.
+
+        Args:
+            max_idle_minutes: Maximum minutes without sync attempt before considering unhealthy.
+
+        Returns:
+            Tuple of (is_healthy, status_message).
+        """
+        if not self.sync_thread or not self.sync_thread.is_alive():
+            return False, "Worker thread not running"
+
+        if not self.api_enabled:
+            return True, "API disabled"
+
+        if self.last_sync_attempt is None:
+            # Worker just started, hasn't tried yet
+            return True, "Starting up"
+
+        idle_seconds = time.time() - self.last_sync_attempt
+        idle_minutes = idle_seconds / 60
+
+        if idle_minutes > max_idle_minutes:
+            return False, f"No sync attempt for {idle_minutes:.1f} minutes (max {max_idle_minutes})"
+
+        return True, f"Last attempt {idle_minutes:.1f} minutes ago"
+
     def _sync_loop(self):
         """Background loop that syncs pending events to the remote API."""
         while self.sync_running:
@@ -1377,10 +1416,16 @@ class ConversationMonitor(FileSystemEventHandler):
                     and self.sqlite_manager
                     and self.sqlite_manager.enabled
                 ):
-                    synced = self._sync_batch(batch_size=50)
+                    synced, had_events = self._sync_batch(batch_size=50)
                     if synced == 0:
-                        # No pending events, sleep longer
-                        time.sleep(60)
+                        if had_events:
+                            # Had events but failed to sync - use exponential backoff
+                            sleep_time = self.sync_backoff_delay
+                            logger.debug(f"Sync failed, backing off for {sleep_time:.1f}s")
+                            time.sleep(sleep_time)
+                        else:
+                            # No pending events, sleep longer
+                            time.sleep(60)
                     else:
                         # More to sync, short delay between batches
                         logger.info(f"Background sync: synced {synced} events")
@@ -1391,27 +1436,31 @@ class ConversationMonitor(FileSystemEventHandler):
             except Exception as e:
                 logger.error(f"Error in sync worker: {e}")
                 # Back off on errors
-                time.sleep(min(self.sync_backoff_delay * 2, 300))
+                self.sync_backoff_delay = min(self.sync_backoff_delay * 2, 300)
+                time.sleep(self.sync_backoff_delay)
 
-    def _sync_batch(self, batch_size: int = 50) -> int:
+    def _sync_batch(self, batch_size: int = 50) -> tuple[int, bool]:
         """Sync a batch of unsynced events to the remote API.
 
         Args:
             batch_size: Maximum number of events to sync in this batch.
 
         Returns:
-            Number of events successfully synced.
+            Tuple of (number of events successfully synced, whether there were events to sync).
         """
         if not self.sqlite_manager:
-            return 0
+            return 0, False
 
         unsynced = self.sqlite_manager.get_unsynced_events(limit=batch_size)
         if not unsynced:
-            return 0
+            return 0, False
 
         synced_count = 0
         for event in unsynced:
             try:
+                # Update health monitoring timestamp
+                self.last_sync_attempt = time.time()
+
                 # Create redacted version for remote API
                 redacted_event_data = self.redact_secrets_from_event(
                     event["event_data"]
@@ -1426,6 +1475,7 @@ class ConversationMonitor(FileSystemEventHandler):
                         "git_remote_url": event["git_remote_url"],
                         "git_commit_hash": event["git_commit_hash"],
                     },
+                    timeout=self.http_timeout,
                 )
                 response.raise_for_status()
 
@@ -1446,7 +1496,7 @@ class ConversationMonitor(FileSystemEventHandler):
                 self.sync_backoff_delay = min(self.sync_backoff_delay * 2, 300)
                 break
 
-        return synced_count
+        return synced_count, True  # True = had events to sync
 
     def process_existing_files(self, directory: Path):
         """Process all existing JSONL files on startup."""
@@ -1701,18 +1751,7 @@ def check_claude_skills(interactive=True):
         # No skills found
         return
 
-    # Check if any skills are missing (check for SKILL.md inside directory)
-    missing_skills = []
-    for skill in skills_to_check:
-        skill_file = skills_dir / skill / "SKILL.md"
-        if not skill_file.exists():
-            missing_skills.append(skill)
-
-    # If all skills are installed, nothing to do
-    if not missing_skills:
-        return
-
-    # First, try Homebrew location (auto-install silently)
+    # If running from Homebrew, always sync all skills (simpler and more reliable)
     homebrew_skills_dir = Path("/opt/homebrew/share/vibe-check/skills")
     if homebrew_skills_dir.exists():
         import shutil
@@ -1720,13 +1759,13 @@ def check_claude_skills(interactive=True):
         skills_dir.mkdir(parents=True, exist_ok=True)
         installed_count = 0
         updated_count = 0
-        # Copy skill directories (new structure: vibe-check-*/SKILL.md)
+        # Always copy all skill directories to ensure they're up-to-date
         for skill_src_dir in homebrew_skills_dir.glob("vibe-check-*"):
             if skill_src_dir.is_dir():
                 dest = skills_dir / skill_src_dir.name
                 try:
                     if dest.exists():
-                        # Update existing skill
+                        # Always update existing skills
                         shutil.rmtree(dest)
                         shutil.copytree(skill_src_dir, dest)
                         updated_count += 1
@@ -1742,6 +1781,17 @@ def check_claude_skills(interactive=True):
             logger.info(
                 f"Installed {installed_count} new skills, updated {updated_count} existing skills to {skills_dir}"
             )
+        return
+
+    # For non-Homebrew installations, check if any skills are missing
+    missing_skills = []
+    for skill in skills_to_check:
+        skill_file = skills_dir / skill / "SKILL.md"
+        if not skill_file.exists():
+            missing_skills.append(skill)
+
+    # If all skills are installed, nothing to do (non-Homebrew)
+    if not missing_skills:
         return
 
     # Non-interactive mode: auto-install by copying skills directly
@@ -3831,28 +3881,122 @@ Please be proactive about reading relevant files and suggesting fixes."""
 
 def cmd_git_install(args):
     """Install git hooks to current repo or globally."""
-    install_script = Path(__file__).parent / "scripts" / "install-git-hook.sh"
+    import shutil
+    import stat
 
-    if not install_script.exists():
-        print("❌ Install script not found")
-        print(f"   Expected: {install_script}")
+    # Find source hook files
+    source_dir = Path(__file__).parent / "scripts"
+
+    # List of hooks to install: (filename, description, skip_if_no_notes)
+    hooks = [
+        ("prepare-commit-msg", "Commit messages", False),
+        ("post-commit", "Git notes", True),  # Skip if --no-notes
+    ]
+
+    # Check all source hooks exist
+    missing_hooks = []
+    for hook_name, _, _ in hooks:
+        hook_source = source_dir / hook_name
+        if not hook_source.exists():
+            missing_hooks.append(hook_name)
+
+    if missing_hooks:
+        print("❌ Hook source files not found:")
+        for hook in missing_hooks:
+            expected = source_dir / hook
+            print(f"   {expected}")
         return
 
-    # Build command arguments
-    cmd_args = [str(install_script)]
-
+    # Determine target directory
     if args.global_install:
-        cmd_args.append("--global")
+        # Global installation
+        target_dir = Path.home() / ".vibe-check" / "git-hooks"
+        target_dir.mkdir(parents=True, exist_ok=True)
 
-    if hasattr(args, 'no_notes') and args.no_notes:
-        cmd_args.append("--no-notes")
+        print("🌍 Installing git hooks globally...")
+        print(f"   Hooks directory: {target_dir}")
+    else:
+        # Local repository installation
+        repo_path = Path(args.path) if hasattr(args, 'path') and args.path else Path.cwd()
+        target_dir = repo_path / ".git" / "hooks"
 
-    if hasattr(args, 'path') and args.path:
-        cmd_args.append(args.path)
+        if not target_dir.exists():
+            print("❌ Not a git repository")
+            print(f"   No .git/hooks directory found at: {repo_path}")
+            return
 
-    # Run install script
-    result = subprocess.run(cmd_args)
-    sys.exit(result.returncode)
+        print(f"📁 Installing git hooks to current repository...")
+        print(f"   Repository: {repo_path.name}")
+
+    # Install each hook
+    installed_hooks = []
+    skip_notes = hasattr(args, 'no_notes') and args.no_notes
+
+    for hook_name, description, skip_if_no_notes in hooks:
+        # Skip post-commit if --no-notes
+        if skip_if_no_notes and skip_notes:
+            print(f"⏭️  Skipping {hook_name} (--no-notes)")
+            continue
+
+        source = source_dir / hook_name
+        target = target_dir / hook_name
+
+        # Handle chaining: if hook exists and isn't ours, rename to .local
+        if target.exists():
+            # Check if it's already a vibe-check hook
+            is_vibe_check_hook = False
+            if target.is_symlink():
+                is_vibe_check_hook = "vibe-check" in str(target.resolve())
+
+            if not is_vibe_check_hook:
+                # Preserve existing hook by renaming to .local
+                local_hook = target.with_suffix('.local')
+                if not local_hook.exists():
+                    print(f"   Preserving existing {hook_name} as {hook_name}.local")
+                    target.rename(local_hook)
+                else:
+                    print(f"   ⚠️  Both {hook_name} and {hook_name}.local exist")
+                    print(f"      Backing up {hook_name} to {hook_name}.backup")
+                    target.rename(target.with_suffix('.backup'))
+
+        # Create symlink (or copy if symlink fails)
+        try:
+            if target.exists():
+                target.unlink()
+            target.symlink_to(source)
+        except (OSError, NotImplementedError):
+            # Fallback to copy if symlink not supported
+            shutil.copy2(source, target)
+
+        # Make executable
+        target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+        print(f"✅ Installed {hook_name}")
+        installed_hooks.append((hook_name, description))
+
+    # For global installation, set git config
+    if args.global_install and installed_hooks:
+        result = subprocess.run(
+            ["git", "config", "--global", "core.hooksPath", str(target_dir)],
+            capture_output=True
+        )
+        if result.returncode == 0:
+            print(f"\n✅ Git configured to use global hooks")
+            print(f"   All repositories will now use hooks from: {target_dir}")
+        else:
+            print(f"\n⚠️  Failed to set git config")
+            print(f"   Manually run: git config --global core.hooksPath {target_dir}")
+
+    # Show what was installed
+    if installed_hooks:
+        print(f"\n🎉 Installation complete!")
+        for hook_name, description in installed_hooks:
+            print(f"   {description}: ✅ Enabled")
+
+        if not args.global_install:
+            print(f"\n💡 Tip: Use --global to install hooks for all repositories")
+    else:
+        print(f"\n⚠️  No hooks were installed")
 
 
 def cmd_git_uninstall(args):
@@ -4284,8 +4428,21 @@ def run_monitor(args):
     logger.info("Monitoring for changes... (Press Ctrl+C to stop)")
 
     try:
+        health_check_counter = 0
         while True:
             time.sleep(1)
+            health_check_counter += 1
+
+            # Check worker health every 60 seconds
+            if health_check_counter >= 60:
+                health_check_counter = 0
+                if event_handler.api_enabled:
+                    is_healthy, status = event_handler.is_worker_healthy(max_idle_minutes=15)
+                    if not is_healthy:
+                        logger.warning(f"Worker unhealthy: {status}")
+                        logger.info("Restarting sync worker...")
+                        event_handler.stop_sync_worker()
+                        event_handler.start_sync_worker()
     except KeyboardInterrupt:
         logger.info("Stopping vibe-check process...")
         event_handler.stop_sync_worker()
