@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Bundle Identification -->
+	<key>CFBundleIdentifier</key>
+	<string>com.wanderingstan.vibe-check</string>
+
+	<key>CFBundleName</key>
+	<string>VibeCheck</string>
+
+	<key>CFBundleDisplayName</key>
+	<string>VibeCheck</string>
+
+	<key>CFBundleExecutable</key>
+	<string>VibeCheck</string>
+
+	<!-- Version Info -->
+	<key>CFBundleVersion</key>
+	<string>2.0.0</string>
+
+	<key>CFBundleShortVersionString</key>
+	<string>2.0.0</string>
+
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+
+	<key>CFBundleSignature</key>
+	<string>????</string>
+
+	<!-- Platform Requirements -->
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+
+	<key>LSRequiresNativeExecution</key>
+	<true/>
+
+	<!-- UI Configuration -->
+	<key>LSUIElement</key>
+	<true/>
+
+	<!-- Hide from Dock, menubar-only app -->
+	<key>NSHighResolutionCapable</key>
+	<true/>
+
+	<!-- Support for Retina displays -->
+
+	<!-- Copyright -->
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2024-2026 Stan James. All rights reserved.</string>
+
+	<!-- Category -->
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+</dict>
+</plist>

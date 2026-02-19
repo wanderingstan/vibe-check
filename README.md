@@ -28,74 +28,92 @@ Automatic detection and redaction of API keys, tokens, and credentials before da
 
 ## Installation
 
-### MacOS Homebrew (Recommended)
+### macOS Native App (Recommended)
 
-The easiest way to install on macOS:
+**VibeCheck 2.0** is a native Swift macOS app with menubar integration, faster performance, and lower memory usage.
+
+#### Download and Install
+
+1. **Download** the latest DMG from [GitHub Releases](https://github.com/wanderingstan/vibe-check/releases)
+2. **Open** the DMG file
+3. **Drag** VibeCheck.app to your Applications folder
+4. **Launch** VibeCheck from Applications
+
+On first launch, VibeCheck will:
+- Automatically install Claude Code skills to `~/.claude/skills/`
+- Configure MCP server in `~/.claude/mcp_servers.json`
+- Create database at `~/Library/Application Support/VibeCheck/`
+- Add menubar icon for easy access
+
+#### Settings
+
+Click the VibeCheck menubar icon → Settings to configure:
+- Remote sync (optional)
+- Launch at login
+- View statistics
+
+#### Build from Source
+
+Requires macOS 13+ and Xcode 15+:
+
+```bash
+git clone https://github.com/wanderingstan/vibe-check.git
+cd vibe-check
+
+# Build the .app bundle
+./Scripts/build-release.sh
+
+# (Optional) Create DMG installer
+./Scripts/create-dmg.sh
+```
+
+The build creates:
+- **dist/VibeCheck.app** - Signed .app bundle
+- **dist/VibeCheck-2.0.0.dmg** - DMG installer (if create-dmg.sh was run)
+
+For more details, see [DISTRIBUTION.md](DISTRIBUTION.md).
+
+### macOS Homebrew (Python Version)
+
+The original Python version is still available via Homebrew:
 
 ```bash
 brew install wanderingstan/vibe-check/vibe-check
 vibe-check start
 ```
 
-This will:
-
-- Install vibe-check with all dependencies
-- Automatically install Claude Code skills to `~/.claude/skills/`
-- Set up local SQLite database for your conversations
-- Start monitoring your Claude Code conversations in the background
-
-Then manage it with simple commands:
-
-```bash
-vibe-check status    # Check if running
-vibe-check logs      # View logs
-vibe-check restart   # Restart
-```
+**Note:** The Homebrew version and native app can coexist. They use separate databases:
+- **Native app:** `~/Library/Application Support/VibeCheck/`
+- **Homebrew:** `~/.vibe-check/`
 
 ### Linux / Other Platforms
 
-For non-macOS systems (or macOS without Homebrew), install via curl:
+For non-macOS systems, install the Python version via curl:
 
 ```bash
 curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
 ```
 
 This will:
-
 - Install Vibe Check to `~/.vibe-check`
 - Open a browser for authentication
 - Install Claude Code skills to `~/.claude/skills/`
 - Set up auto-start service (systemd on Linux, launchd on macOS)
 - Start monitoring your Claude Code conversations
 
-### From Git Repository
-
-If you've cloned the repo, you can install directly:
-
-```bash
-git clone https://github.com/wanderingstan/vibe-check.git
-cd vibe-check
-./scripts/install.sh
-```
-
-This runs vibe-check directly from the repo (no copying to `~/.vibe-check`). Skills are still installed to `~/.claude/skills/`.
-
 ## Updating
 
-**Homebrew:**
+**macOS Native App:**
+Download the latest DMG from [GitHub Releases](https://github.com/wanderingstan/vibe-check/releases) and replace the old version in your Applications folder.
+
+**Homebrew (Python version):**
 ```bash
 brew upgrade vibe-check
 ```
 
-**Curl installation:**
+**Curl installation (Python version):**
 ```bash
 curl -fsSL https://vibecheck.wanderingstan.com/install.sh | bash
-```
-
-**Git repo:**
-```bash
-git pull
-./scripts/install.sh  # Updates dependencies if needed
 ```
 
 ## Uninstalling

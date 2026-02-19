@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Allow network access for remote sync -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+
+	<!-- Allow file access to user-selected files/directories -->
+	<!-- Required for reading ~/.claude/projects and writing to ~/Library/Application Support -->
+	<key>com.apple.security.files.user-selected.read-write</key>
+	<true/>
+
+	<!-- NOTE: App Sandbox is NOT enabled -->
+	<!-- We need unrestricted file system access to monitor ~/.claude/projects -->
+	<!-- and write to ~/Library/Application Support/VibeCheck -->
+
+	<!-- Hardened Runtime is enabled via codesign flags, not here -->
+</dict>
+</plist>
