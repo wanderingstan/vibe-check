@@ -219,7 +219,10 @@ def main():
         sys.exit(0)
 
     # Query for relevant sessions
-    sessions = get_relevant_sessions(db_path, branch, remote_url)
+    try:
+        sessions = get_relevant_sessions(db_path, branch, remote_url)
+    except Exception:
+        sys.exit(0)  # Don't block the commit if DB is unavailable
     if not sessions:
         sys.exit(0)
 
