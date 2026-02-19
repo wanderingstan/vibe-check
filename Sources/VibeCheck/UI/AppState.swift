@@ -11,6 +11,7 @@ class AppState: ObservableObject {
     @Published var totalEvents: Int = 0
     @Published var totalSessions: Int = 0
     @Published var unsyncedCount: Int = 0
+    @Published var syncAllEnabled: Bool = false
 
     // Settings (backed by UserDefaults via @AppStorage)
     @Published var conversationDirectory: String
@@ -54,8 +55,24 @@ class AppState: ObservableObject {
             self.totalEvents = stats.totalEvents
             self.totalSessions = stats.totalSessions
             self.unsyncedCount = stats.unsyncedCount
+            self.syncAllEnabled = try await dbManager.hasSyncAllScope()
         } catch {
             print("Error refreshing stats: \(error)")
+        }
+    }
+
+    /// Toggle global sync-all by adding or removing the 'all' scope
+    func setSyncAll(_ enabled: Bool) async {
+        guard let dbManager = dbManager else { return }
+        do {
+            if enabled {
+                try await dbManager.addAllSyncScope()
+            } else {
+                try await dbManager.removeAllSyncScope()
+            }
+            self.syncAllEnabled = enabled
+        } catch {
+            print("Error updating sync-all scope: \(error)")
         }
     }
 

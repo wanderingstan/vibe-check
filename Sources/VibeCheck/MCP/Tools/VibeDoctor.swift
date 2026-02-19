@@ -35,22 +35,41 @@ struct VibeDoctor {
             output += "The database will be created when VibeCheck starts monitoring.\n\n"
         }
 
-        // Check UserDefaults configuration
+        // Check configuration
         output += "### Configuration\n"
         let defaults = UserDefaults.standard
-        let apiEnabled = defaults.bool(forKey: "apiEnabled")
         let conversationDir = defaults.string(forKey: "conversationDirectory") ?? "~/.claude/projects"
+        let apiURL = defaults.string(forKey: "apiURL") ?? "(not set)"
+        let apiKeySet = !(defaults.string(forKey: "apiKey") ?? "").isEmpty
+
+        // Sync status comes from the sync_scopes table (source of truth)
+        var hasSyncAll = false
+        var sessionScopeCount = 0
+        if FileManager.default.fileExists(atPath: dbPath) {
+            let db = MCPDatabase(dbPath: dbPath)
+            if let scopeStats = try? await db.executeQuery(
+                "SELECT scope_type, COUNT(*) as cnt FROM sync_scopes GROUP BY scope_type"
+            ) {
+                for row in scopeStats {
+                    let t = row.getString("scope_type") ?? ""
+                    let c = row.getInt("cnt") ?? 0
+                    if t == "all" { hasSyncAll = c > 0 }
+                    if t == "session" { sessionScopeCount = c }
+                }
+            }
+        }
 
         output += "**Key Settings**:\n"
         output += "- Conversation directory: `\(conversationDir)`\n"
-        output += "- Remote sync enabled: \(apiEnabled)\n"
-
-        if apiEnabled {
-            let apiURL = defaults.string(forKey: "apiURL") ?? "(not set)"
-            let apiKeySet = !(defaults.string(forKey: "apiKey") ?? "").isEmpty
-            output += "- API URL: `\(apiURL)`\n"
-            output += "- API key: \(apiKeySet ? "✅ Set" : "❌ Not set")\n"
+        if hasSyncAll {
+            output += "- Remote sync: ✅ Enabled (all events)\n"
+        } else if sessionScopeCount > 0 {
+            output += "- Remote sync: ✅ Selective (\(sessionScopeCount) shared session(s))\n"
+        } else {
+            output += "- Remote sync: ⬜ Disabled (local only)\n"
         }
+        output += "- API URL: `\(apiURL)`\n"
+        output += "- API key: \(apiKeySet ? "✅ Set" : "❌ Not set")\n"
         output += "\n"
 
         // Check if conversation directory exists

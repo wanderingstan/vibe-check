@@ -36,6 +36,8 @@ class Settings {
 
     // MARK: - API Sync Settings
 
+    /// Deprecated: use DatabaseManager.hasSyncAllScope() instead.
+    /// Only kept for AppDelegate migration (reads legacy value on first launch).
     var apiEnabled: Bool {
         get { defaults.bool(forKey: "apiEnabled") }
         set { defaults.set(newValue, forKey: "apiEnabled") }

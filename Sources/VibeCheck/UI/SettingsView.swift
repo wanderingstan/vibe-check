@@ -7,7 +7,6 @@ struct SettingsView: View {
 
     // Settings backed by UserDefaults
     @AppStorage("conversationDirectory") private var conversationDirectory = "~/.claude/projects"
-    @AppStorage("apiEnabled") private var apiEnabled = false
     @AppStorage("apiURL") private var apiURL = "https://vibecheck.wanderingstan.com/api"
     @AppStorage("apiKey") private var apiKey = ""
 
@@ -259,10 +258,15 @@ struct SettingsView: View {
             if !apiKey.isEmpty {
                 Divider()
 
-                Toggle("Enable Remote Sync", isOn: $apiEnabled)
-                    .toggleStyle(.switch)
+                Toggle("Enable Remote Sync", isOn: Binding(
+                    get: { appState.syncAllEnabled },
+                    set: { enabled in
+                        Task { await appState.setSyncAll(enabled) }
+                    }
+                ))
+                .toggleStyle(.switch)
 
-                if apiEnabled {
+                if appState.syncAllEnabled {
                     HStack {
                         Image(systemName: "cloud.fill")
                             .foregroundColor(.green)
@@ -385,7 +389,7 @@ struct SettingsView: View {
                 .font(.title)
                 .fontWeight(.bold)
 
-            Text("Version 2.0.0 (Swift Edition)")
+            Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
@@ -502,15 +506,15 @@ struct SettingsView: View {
                 // Poll for approval
                 let apiKey = try await pollForKey()
 
-                // Success - save API key
+                // Success - save API key and enable global sync
                 await MainActor.run {
                     self.apiKey = apiKey
-                    self.apiEnabled = true
                     self.isAuthenticating = false
                     self.authUserCode = nil
                     self.authError = nil
                     print("✅ Authentication successful - API key saved")
                 }
+                await appState.setSyncAll(true)
 
             } catch {
                 await MainActor.run {
@@ -533,8 +537,8 @@ struct SettingsView: View {
 
     private func logout() {
         apiKey = ""
-        apiEnabled = false
         authError = nil
+        Task { await appState.setSyncAll(false) }
         print("🔓 Logged out - API key removed")
     }
 

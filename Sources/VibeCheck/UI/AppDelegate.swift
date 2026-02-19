@@ -56,6 +56,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self.dbManager = dbManager
             print("✅ Database initialized")
 
+            // Migrate from legacy apiEnabled UserDefaults flag to sync_scopes table
+            let defaults = UserDefaults.standard
+            if defaults.bool(forKey: "apiEnabled") {
+                try? await dbManager.addAllSyncScope()
+                defaults.removeObject(forKey: "apiEnabled")
+                print("🔄 Migrated apiEnabled → sync_scopes 'all' row")
+            }
+
             // Initialize state manager
             let stateManager = StateManager(dbManager: dbManager)
             self.stateManager = stateManager

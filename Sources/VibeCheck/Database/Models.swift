@@ -107,3 +107,48 @@ extension FileState: FetchableRecord, MutablePersistableRecord {
         Column("updated_at")
     ]
 }
+
+// MARK: - SyncScope
+
+/// Tracks what should be selectively synced to the remote API.
+/// scope_type = 'all' means sync everything (replaces the old apiEnabled flag).
+/// scope_type = 'session' means sync events for a specific session.
+/// The local sync_scopes table is the sole source of truth for what gets synced.
+/// The remote server has no mechanism to add or modify scopes on the client.
+struct SyncScope: Codable {
+    var id: Int64?
+    var scopeType: String           // 'all', 'session', 'repository', 'conversation'
+    var scopeSessionId: String?
+    var scopeGitRemoteUrl: String?
+    var scopeFileName: String?
+    var createdAt: Date
+    var lastSyncedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case scopeType = "scope_type"
+        case scopeSessionId = "scope_session_id"
+        case scopeGitRemoteUrl = "scope_git_remote_url"
+        case scopeFileName = "scope_file_name"
+        case createdAt = "created_at"
+        case lastSyncedAt = "last_synced_at"
+    }
+}
+
+extension SyncScope: FetchableRecord, MutablePersistableRecord {
+    static let databaseTableName = "sync_scopes"
+
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+
+    func encode(to container: inout PersistenceContainer) throws {
+        container["id"] = id
+        container["scope_type"] = scopeType
+        container["scope_session_id"] = scopeSessionId
+        container["scope_git_remote_url"] = scopeGitRemoteUrl
+        container["scope_file_name"] = scopeFileName
+        container["created_at"] = createdAt
+        container["last_synced_at"] = lastSyncedAt
+    }
+}

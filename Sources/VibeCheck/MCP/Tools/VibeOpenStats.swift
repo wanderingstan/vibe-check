@@ -4,16 +4,27 @@ import AppKit
 /// vibe_open_stats - Open web-based stats page in browser
 struct VibeOpenStats {
     static func execute(args: ToolArguments, dbPath: String) async throws -> String {
-        // Read UserDefaults for API configuration
         let defaults = UserDefaults.standard
-        let apiEnabled = defaults.bool(forKey: "apiEnabled")
 
-        if !apiEnabled {
+        // Check sync_scopes table to see if global sync is enabled
+        var hasSyncAll = false
+        if FileManager.default.fileExists(atPath: dbPath) {
+            let db = MCPDatabase(dbPath: dbPath)
+            if let rows = try? await db.executeQuery(
+                "SELECT COUNT(*) as cnt FROM sync_scopes WHERE scope_type = 'all'"
+            ), let cnt = rows.first?.getInt("cnt") {
+                hasSyncAll = cnt > 0
+            }
+        }
+
+        if !hasSyncAll {
             return """
-                Remote stats are disabled in your configuration.
+                Remote stats are not enabled in your configuration.
 
                 You're currently only saving conversations locally to SQLite.
                 Use vibe_stats tool to view local statistics.
+
+                To enable remote stats, turn on "Enable Remote Sync" in VibeCheck Settings.
                 """
         }
 

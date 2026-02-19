@@ -1,12 +1,16 @@
 import Foundation
 import GRDB
 
-/// Background worker that syncs unsynced events to remote API
-/// Runs continuously, respecting the apiEnabled setting
+/// Background worker that syncs events to the remote API.
+/// Sync decisions are driven entirely by the local sync_scopes table:
+///   - scope_type = 'all': sync all unsynced events (global sync)
+///   - scope_type = 'session': sync events for a specific session only
+/// The remote server has no mechanism to add or modify scopes.
 actor RemoteSyncWorker {
     private let dbManager: DatabaseManager
     private var isRunning = false
     private var syncTask: Task<Void, Never>?
+    private var sleepTask: Task<Void, Never>?
 
     // Retry configuration
     private var consecutiveFailures = 0
@@ -32,47 +36,81 @@ actor RemoteSyncWorker {
     /// Stop the background sync worker
     func stop() async {
         isRunning = false
+        sleepTask?.cancel()
+        sleepTask = nil
         syncTask?.cancel()
         syncTask = nil
         print("⏸️  Remote sync worker stopped")
     }
 
-    /// Main sync loop - runs continuously while isRunning is true
+    /// Wake up the sync loop early (e.g., after a new scope is registered)
+    func wakeUp() {
+        sleepTask?.cancel()
+        sleepTask = nil
+    }
+
+    /// Sleep that can be cancelled by wakeUp()
+    private func cancellableSleep(nanoseconds: UInt64) async {
+        let task: Task<Void, Never> = Task {
+            do { try await Task.sleep(nanoseconds: nanoseconds) } catch { }
+        }
+        sleepTask = task
+        await task.value
+        sleepTask = nil
+    }
+
+    /// Main sync loop — runs continuously while isRunning is true
     private func runSyncLoop() async {
         while await isRunning {
-            // Check if sync is enabled
+            // Read API credentials (shared UserDefaults)
             let defaults = UserDefaults.standard
-            let apiEnabled = defaults.bool(forKey: "apiEnabled")
-
-            if !apiEnabled {
-                // Wait longer when disabled
-                try? await Task.sleep(nanoseconds: 60_000_000_000) // 60 seconds
-                continue
-            }
-
-            // Get API configuration
             let apiURL = defaults.string(forKey: "apiURL") ?? ""
             let apiKey = defaults.string(forKey: "apiKey") ?? ""
 
             guard !apiURL.isEmpty, !apiKey.isEmpty else {
-                // Wait and retry if config is incomplete
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                // No credentials configured — wait and retry
+                await cancellableSleep(nanoseconds: 60_000_000_000)
                 continue
             }
 
-            // Perform sync
+            // Determine sync mode from database (sole source of truth)
+            let scopes: [SyncScope]
             do {
-                let synced = try await performSync(apiURL: apiURL, apiKey: apiKey)
+                scopes = try await dbManager.getActiveSyncScopes()
+            } catch {
+                print("❌ Failed to read sync scopes: \(error)")
+                await cancellableSleep(nanoseconds: 60_000_000_000)
+                continue
+            }
+
+            guard !scopes.isEmpty else {
+                // No scopes registered — nothing to sync
+                await cancellableSleep(nanoseconds: 60_000_000_000)
+                continue
+            }
+
+            let hasAllScope = scopes.contains { $0.scopeType == "all" }
+
+            do {
+                let synced: Int
+                if hasAllScope {
+                    synced = try await performGlobalSync(apiURL: apiURL, apiKey: apiKey)
+                } else {
+                    synced = try await performSelectiveSync(
+                        apiURL: apiURL, apiKey: apiKey, scopes: scopes
+                    )
+                }
+
+                consecutiveFailures = 0
 
                 if synced > 0 {
                     print("✅ Synced \(synced) events to remote API")
-                    consecutiveFailures = 0
-
-                    // Short delay between batches when actively syncing
-                    try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
+                    await cancellableSleep(nanoseconds: 2_000_000_000) // 2s between batches
+                } else if hasAllScope {
+                    await cancellableSleep(nanoseconds: 60_000_000_000) // 60s when global sync idle
                 } else {
-                    // No events to sync, wait longer
-                    try? await Task.sleep(nanoseconds: 60_000_000_000) // 60 seconds
+                    // Scopes exist but nothing pending — poll frequently so new events are caught quickly
+                    await cancellableSleep(nanoseconds: 5_000_000_000) // 5s
                 }
 
             } catch {
@@ -80,34 +118,70 @@ actor RemoteSyncWorker {
                 let backoff = calculateBackoff()
                 print("❌ Sync failed (attempt \(consecutiveFailures)): \(error)")
                 print("⏳ Backing off for \(backoff) seconds")
-
-                try? await Task.sleep(nanoseconds: backoff * 1_000_000_000)
+                await cancellableSleep(nanoseconds: backoff * 1_000_000_000)
             }
         }
     }
 
-    /// Perform a single sync operation
-    private func performSync(apiURL: String, apiKey: String) async throws -> Int {
-        // Query unsynced events (batched to avoid memory issues)
+    /// Global sync — uploads all unsynced events (scope_type = 'all')
+    private func performGlobalSync(apiURL: String, apiKey: String) async throws -> Int {
         let unsyncedEvents = try await dbManager.getUnsyncedEvents(limit: 50)
+        guard !unsyncedEvents.isEmpty else { return 0 }
 
-        guard !unsyncedEvents.isEmpty else {
-            return 0
+        let client = APIClient(apiURL: apiURL, apiKey: apiKey)
+        let eventsForAPI = buildAPIPayload(from: unsyncedEvents)
+
+        let uploaded = try await client.uploadEvents(eventsForAPI)
+        let eventIds = unsyncedEvents.compactMap { $0.id }
+        try await dbManager.markEventsSynced(eventIds: eventIds)
+
+        return uploaded
+    }
+
+    /// Selective sync — uploads events matching registered session (or other) scopes
+    private func performSelectiveSync(
+        apiURL: String,
+        apiKey: String,
+        scopes: [SyncScope]
+    ) async throws -> Int {
+        let client = APIClient(apiURL: apiURL, apiKey: apiKey)
+        var totalSynced = 0
+
+        for scope in scopes {
+            switch scope.scopeType {
+            case "session":
+                guard let sessionId = scope.scopeSessionId, let scopeId = scope.id else { continue }
+                let events = try await dbManager.getUnsyncedEventsForSession(
+                    sessionId: sessionId, limit: 200
+                )
+                guard !events.isEmpty else { continue }
+
+                let eventsForAPI = buildAPIPayload(from: events)
+                let uploaded = try await client.uploadEvents(eventsForAPI)
+                let eventIds = events.compactMap { $0.id }
+                try await dbManager.markEventsSynced(eventIds: eventIds)
+                try await dbManager.markScopeSynced(scopeId: scopeId)
+
+                totalSynced += uploaded
+
+            default:
+                // Other scope types (repository, conversation) not yet implemented
+                break
+            }
         }
 
-        // Create API client
-        let client = APIClient(apiURL: apiURL, apiKey: apiKey)
+        return totalSynced
+    }
 
-        // Convert events to API format
+    /// Build API payload from events (shared between global and selective paths)
+    private func buildAPIPayload(from events: [ConversationEvent]) -> [[String: Any]] {
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
-        let eventsForAPI = unsyncedEvents.compactMap { event -> [String: Any]? in
+        return events.compactMap { event -> [String: Any]? in
             guard let eventData = event.eventData.data(using: .utf8),
                   let eventJSON = try? JSONSerialization.jsonObject(with: eventData) as? [String: Any]
-            else {
-                return nil
-            }
+            else { return nil }
 
             var apiEvent: [String: Any] = [
                 "id": event.id ?? 0,
@@ -118,7 +192,6 @@ actor RemoteSyncWorker {
                 "inserted_at": isoFormatter.string(from: event.insertedAt),
             ]
 
-            // Add git info if available
             if let gitRemoteURL = event.gitRemoteURL {
                 apiEvent["git_remote_url"] = gitRemoteURL
             }
@@ -128,15 +201,6 @@ actor RemoteSyncWorker {
 
             return apiEvent
         }
-
-        // Upload to API
-        let uploaded = try await client.uploadEvents(eventsForAPI)
-
-        // Mark events as synced
-        let eventIds = unsyncedEvents.compactMap { $0.id }
-        try await dbManager.markEventsSynced(eventIds: eventIds)
-
-        return uploaded
     }
 
     /// Calculate exponential backoff with cap

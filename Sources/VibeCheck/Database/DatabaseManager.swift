@@ -195,6 +195,36 @@ actor DatabaseManager {
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            // Create sync_scopes table — the sole source of truth for what gets synced.
+            // scope_type = 'all' means sync everything (replaces the old apiEnabled flag).
+            // scope_type = 'session' means sync events for a specific session only.
+            // The remote server has no mechanism to add or modify rows here.
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS sync_scopes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scope_type TEXT NOT NULL,
+                    scope_session_id TEXT,
+                    scope_git_remote_url TEXT,
+                    scope_file_name TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_synced_at DATETIME DEFAULT NULL
+                )
+            """)
+
+            // Unique index using IFNULL to handle NULL columns correctly
+            // (plain UNIQUE allows multiple NULLs in SQLite)
+            try db.execute(sql: """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_scopes_unique ON sync_scopes(
+                    scope_type,
+                    IFNULL(scope_session_id, ''),
+                    IFNULL(scope_git_remote_url, ''),
+                    IFNULL(scope_file_name, '')
+                )
+            """)
+
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_sync_scopes_session ON sync_scopes(scope_session_id)")
+            try db.execute(sql: "CREATE INDEX IF NOT EXISTS idx_sync_scopes_type ON sync_scopes(scope_type)")
         }
 
         print("✅ Database schema initialized successfully")
@@ -341,6 +371,103 @@ actor DatabaseManager {
             let unsyncedCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM conversation_events WHERE synced_at IS NULL") ?? 0
 
             return (totalEvents, totalSessions, unsyncedCount)
+        }
+    }
+
+    // MARK: - Sync Scope Operations
+
+    /// Add a session scope for selective sync (idempotent — unique index prevents duplicates)
+    @discardableResult
+    func addSessionSyncScope(sessionId: String) async throws -> Int64? {
+        return try await dbWriter.write { db in
+            var scope = SyncScope(
+                id: nil,
+                scopeType: "session",
+                scopeSessionId: sessionId,
+                scopeGitRemoteUrl: nil,
+                scopeFileName: nil,
+                createdAt: Date(),
+                lastSyncedAt: nil
+            )
+            do {
+                try scope.insert(db)
+                return scope.id
+            } catch let error as DatabaseError where error.resultCode == .SQLITE_CONSTRAINT {
+                // Already registered — return existing id
+                return try Int64.fetchOne(
+                    db,
+                    sql: "SELECT id FROM sync_scopes WHERE scope_type = 'session' AND scope_session_id = ?",
+                    arguments: [sessionId]
+                )
+            }
+        }
+    }
+
+    /// Add the 'all' scope — equivalent to the former apiEnabled = true
+    func addAllSyncScope() async throws {
+        try await dbWriter.write { db in
+            var scope = SyncScope(
+                id: nil,
+                scopeType: "all",
+                scopeSessionId: nil,
+                scopeGitRemoteUrl: nil,
+                scopeFileName: nil,
+                createdAt: Date(),
+                lastSyncedAt: nil
+            )
+            do {
+                try scope.insert(db)
+            } catch let error as DatabaseError where error.resultCode == .SQLITE_CONSTRAINT {
+                // Already exists, ignore
+                _ = error
+            }
+        }
+    }
+
+    /// Remove the 'all' scope (disables global sync)
+    func removeAllSyncScope() async throws {
+        try await dbWriter.write { db in
+            try db.execute(sql: "DELETE FROM sync_scopes WHERE scope_type = 'all'")
+        }
+    }
+
+    /// Returns true if the 'all' scope exists (global sync enabled)
+    func hasSyncAllScope() async throws -> Bool {
+        return try await dbWriter.read { db in
+            let count = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM sync_scopes WHERE scope_type = 'all'"
+            ) ?? 0
+            return count > 0
+        }
+    }
+
+    /// Get all registered sync scopes (used by RemoteSyncWorker)
+    func getActiveSyncScopes() async throws -> [SyncScope] {
+        return try await dbWriter.read { db in
+            try SyncScope.fetchAll(db)
+        }
+    }
+
+    /// Get unsynced events for a specific session (used by selective sync path)
+    func getUnsyncedEventsForSession(sessionId: String, limit: Int = 200) async throws -> [ConversationEvent] {
+        return try await dbWriter.read { db in
+            try ConversationEvent
+                .filter(Column("event_session_id") == sessionId)
+                .filter(Column("synced_at") == nil)
+                .order(Column("id").asc)
+                .limit(limit)
+                .fetchAll(db)
+        }
+    }
+
+    /// Update last_synced_at for a scope after events have been uploaded
+    func markScopeSynced(scopeId: Int64) async throws {
+        try await dbWriter.write { db in
+            try db.execute(
+                sql: "UPDATE sync_scopes SET last_synced_at = ? WHERE id = ?",
+                arguments: [Date(), scopeId]
+            )
         }
     }
 }
