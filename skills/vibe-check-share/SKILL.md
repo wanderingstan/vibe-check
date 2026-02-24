@@ -11,9 +11,13 @@ description: Create a public share link for the current Claude Code session. Use
 
 ## Overview
 
-This skill uses the vibe-check MCP tools to:
-1. Get the current session ID using `mcp__vibe-check__vibe_session`
-2. Create a share link using `mcp__vibe-check__vibe_share`
+This skill uses a single MCP tool call to share the current session.
+
+The current session ID is available directly in the system prompt — the vibe-check `UserPromptSubmit` hook injects it on every turn:
+
+```
+[vibe-check] Session: <session-id> | Repo: ...
+```
 
 If the MCP tools are not available (fallback only), it can use the legacy marker technique.
 
@@ -21,26 +25,16 @@ If the MCP tools are not available (fallback only), it can use the legacy marker
 
 ## Primary Method: Use MCP Tools
 
-### Step 1: Get Current Session ID
-
-Call the MCP tool to get the current session information:
-
-```
-Use mcp__vibe-check__vibe_session with no parameters
-```
-
-This will return session information including the session ID.
-
-### Step 2: Create Share Link
-
-Call the MCP share tool with the session ID:
+Read the session ID from the hook output in the system prompt, then call `mcp__vibe-check__vibe_share` with it directly:
 
 ```
 Use mcp__vibe-check__vibe_share with:
-- session_id: [the session ID from step 1]
+- session_id: [session ID from the hook output above]
 - title: (optional) Custom title for the share
 - slug: (optional) Custom URL slug
 ```
+
+If the hook output is not present, omit `session_id` and the tool will fall back to the most recent session in the database.
 
 The tool will:
 - Read API configuration from ~/.vibe-check/config.json
@@ -48,9 +42,7 @@ The tool will:
 - Return the shareable URL
 - Handle retries if the session hasn't synced yet
 
-### Step 3: Display the Result
-
-The MCP tool will return the share URL. Present it to the user.
+Present the returned share URL to the user.
 
 ---
 
