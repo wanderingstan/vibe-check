@@ -698,6 +698,7 @@ def _register_session_sync_scope(db_path: str, session_id: str) -> Optional[str]
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 scope_type TEXT NOT NULL CHECK(scope_type IN ('all', 'session')),
                 scope_session_id TEXT,
+                scope_git_remote_url TEXT,
                 scope_file_name TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_synced_at DATETIME

@@ -11,12 +11,9 @@ if CommandLine.arguments.contains("--mcp-server") {
     // MCP Server Mode - stdio JSON-RPC server
     Task {
         do {
-            // Get database path from Application Support
-            let appSupport = FileManager.default.urls(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask
-            ).first!
-            let vibeCheckDir = appSupport.appendingPathComponent("VibeCheck")
+            // Get database path from ~/.vibe-check/ (matches Homebrew/Python daemon)
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let vibeCheckDir = home.appendingPathComponent(".vibe-check")
             let dbPath = vibeCheckDir.appendingPathComponent("vibe_check.db").path
 
             // Start MCP server

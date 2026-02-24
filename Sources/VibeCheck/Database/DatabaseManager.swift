@@ -35,9 +35,9 @@ actor DatabaseManager {
                 inMemory = false
             }
         } else {
-            // Default location: ~/Library/Application Support/VibeCheck/vibe_check.db
-            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            let vibeCheckDir = appSupport.appendingPathComponent("VibeCheck", isDirectory: true)
+            // Default location: ~/.vibe-check/vibe_check.db (matches Homebrew/Python daemon)
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let vibeCheckDir = home.appendingPathComponent(".vibe-check", isDirectory: true)
 
             // Create directory if needed
             try FileManager.default.createDirectory(at: vibeCheckDir, withIntermediateDirectories: true)
