@@ -704,6 +704,10 @@ def _register_session_sync_scope(db_path: str, session_id: str) -> Optional[str]
                 last_synced_at DATETIME
             )
         """)
+        # Migrate: add scope_git_remote_url if the table predates this column
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(sync_scopes)")}
+        if "scope_git_remote_url" not in existing:
+            conn.execute("ALTER TABLE sync_scopes ADD COLUMN scope_git_remote_url TEXT")
         conn.execute(
             """
             INSERT OR IGNORE INTO sync_scopes

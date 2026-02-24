@@ -4738,7 +4738,7 @@ def _open_sync_db():
 
 
 def _ensure_sync_scopes_table(conn):
-    """Create sync_scopes table if it doesn't exist yet (daemon may not have run)."""
+    """Create sync_scopes table if it doesn't exist, and migrate any missing columns."""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS sync_scopes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4750,6 +4750,10 @@ def _ensure_sync_scopes_table(conn):
             last_synced_at DATETIME
         )
     """)
+    # Migrate: add scope_git_remote_url if the table predates this column
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(sync_scopes)")}
+    if "scope_git_remote_url" not in existing:
+        conn.execute("ALTER TABLE sync_scopes ADD COLUMN scope_git_remote_url TEXT")
     conn.commit()
 
 
