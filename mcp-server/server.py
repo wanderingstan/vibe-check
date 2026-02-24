@@ -28,6 +28,8 @@ import os
 
 from database import execute_query, find_database_path
 
+MCP_SERVER_VERSION = "1.2.3"
+
 # Create MCP server
 mcp = FastMCP("vibe-check")
 
@@ -922,9 +924,23 @@ def vibe_share(
                 share_url = result.get(
                     "share_url", f"{base}/s/{result.get('share_token', 'unknown')}"
                 )
+                # Verify the sync_scopes row was actually written
+                try:
+                    import sqlite3 as _sq
+                    _c = _sq.connect(db_path)
+                    row_count = _c.execute(
+                        "SELECT COUNT(*) FROM sync_scopes WHERE scope_type='session' AND scope_session_id=?",
+                        (session_id,)
+                    ).fetchone()[0]
+                    _c.close()
+                    scope_status = f"✅ sync_scopes row confirmed ({row_count} row)" if row_count else f"⚠️ sync_scopes row NOT found (db: {db_path})"
+                except Exception as e:
+                    scope_status = f"⚠️ Could not verify sync_scopes: {e} (db: {db_path})"
                 return (
                     "## Session Shared Successfully\n\n"
                     f"**Share URL**: {share_url}\n\n"
+                    f"**Sync scope**: {scope_status}\n\n"
+                    f"*MCP server v{MCP_SERVER_VERSION}*\n\n"
                     "Anyone with this link can view the session."
                 )
             return f"Failed to create share: {result.get('error', result.get('message', 'Unknown error'))}"
