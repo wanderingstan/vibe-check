@@ -4672,13 +4672,14 @@ def cmd_mcp_server(args):
     Locates the installed server.py and its venv, then replaces the current
     process via os.execve so Claude Code talks directly to the MCP server.
     """
-    # Locate server.py — prefer user-installed copy over Homebrew share
-    candidates = [
-        Path.home() / ".vibe-check" / "mcp-server" / "server.py",
+    # Locate server.py — prefer Homebrew share path so brew upgrades take effect
+    # immediately without needing to copy files to ~/.vibe-check/mcp-server/
+    server_candidates = [
         Path("/opt/homebrew/share/vibe-check/mcp-server/server.py"),
+        Path.home() / ".vibe-check" / "mcp-server" / "server.py",
         Path(__file__).parent / "mcp-server" / "server.py",
     ]
-    server_py = next((p for p in candidates if p.exists()), None)
+    server_py = next((p for p in server_candidates if p.exists()), None)
     if not server_py:
         print(
             "Error: MCP server not found. Run 'vibe-check setup' to install it.",
@@ -4686,9 +4687,10 @@ def cmd_mcp_server(args):
         )
         sys.exit(1)
 
-    # Prefer the dedicated MCP venv python; it has the 'mcp' package installed.
+    # Always use the user-installed venv for python — it has the 'mcp' package.
+    # The venv lives at ~/.vibe-check/mcp-server/.venv regardless of where server.py is.
     # Fall back to current python only in dev environments where mcp is available.
-    venv_python = server_py.parent / ".venv" / "bin" / "python"
+    venv_python = Path.home() / ".vibe-check" / "mcp-server" / ".venv" / "bin" / "python"
     if venv_python.exists():
         python_exe = str(venv_python)
     else:
