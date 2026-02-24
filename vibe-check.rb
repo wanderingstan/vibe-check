@@ -82,9 +82,6 @@ class VibeCheck < Formula
     # Install skills to share directory (each skill is a directory with SKILL.md)
     (share/"vibe-check/skills").install Dir["skills/vibe-check-*"]
 
-    # Install MCP server to share directory
-    (share/"vibe-check/mcp-server").install Dir["mcp-server/*"]
-
     # Create executable wrapper for monitor that uses venv python
     (bin/"vibe-check").write <<~EOS
       #!/bin/bash

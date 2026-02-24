@@ -3062,6 +3062,9 @@ def cmd_stop(args):
 
 def cmd_restart(args):
     """Restart the vibe-check process daemon."""
+    # Update MCP entry and skills before restarting so brew upgrades take effect
+    check_mcp_plugin(interactive=False)
+
     # If homebrew service, use brew services restart directly
     if is_homebrew_service_running() or is_homebrew_service():
         print("🧜 Restarting Homebrew service...")
