@@ -1804,7 +1804,11 @@ class ConversationMonitor(FileSystemEventHandler):
 
 
 def is_mcp_plugin_installed() -> bool:
-    """Check if vibe-check MCP server is registered in ~/.claude.json."""
+    """Check if vibe-check MCP server is registered in ~/.claude.json with the current format.
+
+    Returns False if the entry is missing OR if it uses the old direct-venv format,
+    so that check_mcp_plugin() will update stale entries on daemon startup.
+    """
     claude_config = Path.home() / ".claude.json"
     if not claude_config.exists():
         return False
@@ -1812,8 +1816,11 @@ def is_mcp_plugin_installed() -> bool:
     try:
         with open(claude_config, "r") as f:
             config = json.load(f)
-        mcp_servers = config.get("mcpServers", {})
-        return "vibe-check" in mcp_servers
+        entry = config.get("mcpServers", {}).get("vibe-check")
+        if not entry:
+            return False
+        # Consider it current only if it uses the --mcp-server flag
+        return "--mcp-server" in entry.get("args", [])
     except (json.JSONDecodeError, IOError):
         return False
 
