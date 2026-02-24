@@ -676,18 +676,31 @@ def _save_vibe_config(config: dict, config_path: Path) -> bool:
         return False
 
 
-def _register_session_sync_scope(db_path: str, session_id: str) -> None:
+def _register_session_sync_scope(db_path: str, session_id: str) -> Optional[str]:
     """Write a session sync scope directly to the SQLite DB.
 
     This tells the vibe-check daemon to sync events for this session even
     when global sync (api.enabled) is off.
     The local sync_scopes table is the sole source of truth — the remote
     server has no mechanism to add or modify rows here.
+
+    Returns an error string if registration failed, or None on success.
     """
     import sqlite3 as _sqlite3
     try:
         conn = _sqlite3.connect(db_path, timeout=10)
         conn.execute("PRAGMA journal_mode=WAL")
+        # Create table if it doesn't exist (daemon may not have run yet)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS sync_scopes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope_type TEXT NOT NULL CHECK(scope_type IN ('all', 'session')),
+                scope_session_id TEXT,
+                scope_file_name TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_synced_at DATETIME
+            )
+        """)
         conn.execute(
             """
             INSERT OR IGNORE INTO sync_scopes
@@ -698,8 +711,9 @@ def _register_session_sync_scope(db_path: str, session_id: str) -> None:
         )
         conn.commit()
         conn.close()
-    except Exception:
-        pass  # Non-fatal: share creation will retry while waiting for sync
+        return None
+    except Exception as e:
+        return str(e)
 
 
 def _device_flow_auth(api_url: str) -> tuple[Optional[str], str]:
@@ -859,7 +873,9 @@ def vibe_share(
         "database_path", "~/.vibe-check/vibe_check.db"
     )
     db_path = str(Path(db_path_raw).expanduser())
-    _register_session_sync_scope(db_path, session_id)
+    sync_err = _register_session_sync_scope(db_path, session_id)
+    if sync_err:
+        return f"## Error\n\nFailed to register session in sync_scopes: {sync_err}\n\nDB path: {db_path}"
     # The daemon reads sync_scopes every 5s and will begin uploading events
 
     # STEP 4: Create share link (retry while waiting for daemon to sync)
