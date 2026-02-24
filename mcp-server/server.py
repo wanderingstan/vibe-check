@@ -792,7 +792,7 @@ def _device_flow_auth(api_url: str) -> tuple[Optional[str], str]:
 
 @mcp.tool()
 def vibe_share(
-    session_id: str,
+    session_id: Optional[str] = None,
     title: Optional[str] = None,
     slug: Optional[str] = None,
     wait_for_sync: bool = True,
@@ -805,7 +805,7 @@ def vibe_share(
     The session will be synced to the server even if global sync is disabled.
 
     Args:
-        session_id: The session ID to share
+        session_id: The session ID to share (default: most recent session)
         title: Optional title for the share (default: auto-generated)
         slug: Optional custom URL slug (default: auto-generated)
         wait_for_sync: If true, retry if session not synced yet (default: true)
@@ -822,6 +822,22 @@ def vibe_share(
     api_config = config.get("api", {})
     api_url = (api_config.get("url") or DEFAULT_API_URL).rstrip("/")
     api_key = api_config.get("api_key", "")
+
+    # STEP 1b: Resolve session_id if not provided — use most recent session
+    if not session_id:
+        rows = execute_query(
+            """
+            SELECT event_session_id
+            FROM conversation_events
+            WHERE event_session_id IS NOT NULL
+            GROUP BY event_session_id
+            ORDER BY MAX(event_timestamp) DESC
+            LIMIT 1
+            """,
+        )
+        if not rows:
+            return "## Error\n\nNo sessions found in the database. Is vibe-check running?"
+        session_id = rows[0]["event_session_id"]
 
     # STEP 2: Authenticate if no API key
     if not api_key:

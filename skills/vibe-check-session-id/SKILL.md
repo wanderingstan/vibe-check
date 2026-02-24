@@ -11,24 +11,27 @@ description: Get the current Claude Code session ID and log file path. Use when 
 
 ## Primary Method: Use MCP Tool
 
-**RECOMMENDED:** Use the vibe-check MCP tool to get session information directly.
-
-### Step 1: Call the MCP Tool
-
-Use the `mcp__vibe-check__vibe_session` tool with no parameters to get the current (most recent) session:
+The current session ID is injected into the system prompt by the vibe-check `UserPromptSubmit` hook on every turn, in this format:
 
 ```
-Use mcp__vibe-check__vibe_session with no parameters
+[vibe-check] Session: <session-id> | Repo: ...
 ```
 
-This will return:
+Read the session ID from that hook output, then pass it directly to `mcp__vibe-check__vibe_session`:
+
+```
+Use mcp__vibe-check__vibe_session with:
+- session_id: [session ID from the hook output above]
+```
+
+If the hook output is not present, call with no parameters and the tool will fall back to the most recent session in the database.
+
+The tool returns:
 - Session ID
 - Log file path
 - Session start/end times
 - Message counts
 - Repository and branch information
-
-### Step 2: Present Results
 
 Display the session information to the user in a clear format.
 

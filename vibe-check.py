@@ -3353,7 +3353,7 @@ def cmd_status(args):
 
     # Remote sync status
     print("\n☁️  Remote sync:")
-    api_enabled = False  # Track for use in sync statistics section
+    api_enabled = False  # Track for use in sync statistics section below
     if config_path.exists():
         try:
             with open(config_path, "r") as f:
@@ -3361,25 +3361,59 @@ def cmd_status(args):
             api_config = config.get("api", {})
             api_url = api_config.get("url", "")
             api_key = api_config.get("api_key", "")
-            api_enabled = api_config.get("enabled", False)
+            has_credentials = bool(api_key and api_url)
 
-            if api_key and api_enabled:
-                print(f"   ✅ Enabled")
-                print(f"   Server: {api_url}")
-                print(f"   API Key: {api_key[:8]}...{api_key[-4:]}")
-            elif api_key and not api_enabled:
-                print(f"   ⚠️  Authenticated but disabled")
-                print(f"   Server: {api_url}")
-                print("   To enable: set api.enabled=true in config")
+            # Read sync mode from sync_scopes table
+            global_sync_on = False
+            session_scope_count = 0
+            if db_path and db_path.exists():
+                try:
+                    _sc = sqlite3.connect(str(db_path))
+                    _cur = _sc.cursor()
+                    tables = [r[0] for r in _cur.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name='sync_scopes'"
+                    ).fetchall()]
+                    if tables:
+                        global_sync_on = _cur.execute(
+                            "SELECT COUNT(*) FROM sync_scopes WHERE scope_type='all'"
+                        ).fetchone()[0] > 0
+                        session_scope_count = _cur.execute(
+                            "SELECT COUNT(*) FROM sync_scopes WHERE scope_type='session'"
+                        ).fetchone()[0]
+                    _sc.close()
+                except sqlite3.Error:
+                    pass
+
+            api_enabled = has_credentials and (global_sync_on or session_scope_count > 0)
+
+            # Connection line
+            if has_credentials:
+                host = api_url.replace("https://", "").replace("http://", "").split("/")[0]
+                print(f"   Connection: ✅ {host}  (API Key: {api_key[:8]}...{api_key[-4:]})")
             else:
-                print("   ❌ Not configured")
-                print("   To enable: vibe-check auth login")
+                print("   Connection: ❌ Not configured")
+                print("               Run: vibe-check auth login")
+
+            # Mode line (only shown when connected)
+            if has_credentials:
+                if global_sync_on:
+                    print("   Mode:       🌐 Global — all sessions synced automatically")
+                    print("               To stop:  vibe-check sync disable")
+                    print("               (Individual sessions can still be shared when off)")
+                elif session_scope_count > 0:
+                    print(f"   Mode:       🎯 Selective — {session_scope_count} session(s) explicitly shared")
+                    print("               To sync all future sessions:  vibe-check sync enable")
+                else:
+                    print("   Mode:       ⚪ Off — no sessions are being synced")
+                    print("               To sync all sessions:   vibe-check sync enable")
+                    print("               To share one session:   say \"share this session\" to Claude Code")
+
         except (json.JSONDecodeError, KeyError):
             print("   ⚠️  Config file invalid")
             print("   To fix: vibe-check auth login")
     else:
-        print("   ❌ Not configured")
-        print("   To enable: vibe-check auth login")
+        print("   Connection: ❌ Not configured")
+        print("               Run: vibe-check auth login")
 
     # Sync statistics (part of Remote sync section)
     if db_path and db_path.exists():
@@ -4635,6 +4669,113 @@ def cmd_auth_logout(args):
     print("✅ Logged out. API key removed from config.")
 
 
+def _open_sync_db():
+    """Open the vibe-check SQLite DB for sync commands. Returns (conn, db_path) or (None, None)."""
+    config_path = get_config_path()
+    if not config_path.exists():
+        print("⚠️  No config found. Run 'vibe-check setup' first.")
+        return None, None
+    with open(config_path, "r") as f:
+        config = json.load(f)
+    db_path = Path(
+        config.get("sqlite", {}).get("database_path", "~/.vibe-check/vibe_check.db")
+    ).expanduser()
+    if not db_path.exists():
+        print(f"⚠️  Database not found at {db_path}. Is vibe-check running?")
+        return None, None
+    conn = sqlite3.connect(str(db_path))
+    return conn, db_path
+
+
+def _ensure_sync_scopes_table(conn):
+    """Create sync_scopes table if it doesn't exist yet (daemon may not have run)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sync_scopes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            scope_type TEXT NOT NULL CHECK(scope_type IN ('all', 'session')),
+            scope_session_id TEXT,
+            scope_file_name TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_synced_at DATETIME
+        )
+    """)
+    conn.commit()
+
+
+def cmd_sync_status(args):
+    """Show current remote sync configuration."""
+    conn, db_path = _open_sync_db()
+    if conn is None:
+        return
+    try:
+        _ensure_sync_scopes_table(conn)
+        cur = conn.cursor()
+        global_on = cur.execute(
+            "SELECT COUNT(*) FROM sync_scopes WHERE scope_type='all'"
+        ).fetchone()[0] > 0
+        session_count = cur.execute(
+            "SELECT COUNT(*) FROM sync_scopes WHERE scope_type='session'"
+        ).fetchone()[0]
+
+        print("\nSync status:")
+        if global_on:
+            print("  Global sync:  enabled  — all sessions are uploaded automatically")
+        else:
+            print("  Global sync:  disabled — new sessions are kept local by default")
+        print(f"  Sessions explicitly shared: {session_count}")
+        print()
+        if global_on:
+            print("  To stop syncing new sessions:  vibe-check sync disable")
+            print("  (already-shared sessions are not affected)")
+        else:
+            print("  To sync all sessions automatically:  vibe-check sync enable")
+            print("  To share a single session:           vibe-check sync share")
+            print("  Or say \"share this session\" to Claude Code")
+    finally:
+        conn.close()
+
+
+def cmd_sync_enable(args):
+    """Enable global sync — all sessions will be uploaded automatically."""
+    conn, _ = _open_sync_db()
+    if conn is None:
+        return
+    try:
+        _ensure_sync_scopes_table(conn)
+        conn.execute(
+            "INSERT OR IGNORE INTO sync_scopes (scope_type, created_at) VALUES ('all', CURRENT_TIMESTAMP)"
+        )
+        conn.commit()
+        print("✅ Global sync enabled.")
+        print("   All new sessions will be uploaded to the remote server automatically.")
+        print()
+        print("   To turn this off later:  vibe-check sync disable")
+        print("   (You can still share individual sessions when global sync is off)")
+    finally:
+        conn.close()
+
+
+def cmd_sync_disable(args):
+    """Disable global sync — new sessions stay local unless explicitly shared."""
+    conn, _ = _open_sync_db()
+    if conn is None:
+        return
+    try:
+        _ensure_sync_scopes_table(conn)
+        conn.execute("DELETE FROM sync_scopes WHERE scope_type='all'")
+        conn.commit()
+        print("✅ Global sync disabled.")
+        print("   New sessions will stay local by default.")
+        print()
+        print("   You can still share individual sessions at any time:")
+        print("     • Say \"share this session\" to Claude Code")
+        print("     • Or run: vibe-check sync share")
+        print()
+        print("   To re-enable automatic sync:  vibe-check sync enable")
+    finally:
+        conn.close()
+
+
 def run_monitor(args):
     """Run the vibe-check process (extracted from main for daemon support)."""
     # Set up logging for console if not already configured (foreground mode)
@@ -4961,6 +5102,35 @@ Examples:
 
     # Default for 'auth' with no subcommand
     parser_auth.set_defaults(func=cmd_auth_status)
+
+    # sync subcommands
+    parser_sync = subparsers.add_parser(
+        "sync", help="Remote sync configuration"
+    )
+    sync_subparsers = parser_sync.add_subparsers(
+        dest="sync_command", help="Sync command"
+    )
+
+    # sync status
+    parser_sync_status = sync_subparsers.add_parser(
+        "status", help="Show current sync configuration"
+    )
+    parser_sync_status.set_defaults(func=cmd_sync_status)
+
+    # sync enable
+    parser_sync_enable = sync_subparsers.add_parser(
+        "enable", help="Sync all sessions automatically"
+    )
+    parser_sync_enable.set_defaults(func=cmd_sync_enable)
+
+    # sync disable
+    parser_sync_disable = sync_subparsers.add_parser(
+        "disable", help="Stop auto-syncing (individual sessions can still be shared)"
+    )
+    parser_sync_disable.set_defaults(func=cmd_sync_disable)
+
+    # Default for 'sync' with no subcommand
+    parser_sync.set_defaults(func=cmd_sync_status)
 
     # Parse arguments
     args = parser.parse_args()
