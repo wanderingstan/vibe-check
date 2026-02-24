@@ -20,3 +20,17 @@ server/config.json
 
 # Test output and logs
 tests/*.log
+
+# Swift build artifacts
+.build/
+.swiftpm/
+*.xcodeproj
+xcuserdata/
+DerivedData/
+*.xcworkspace
+
+# Swift Package Manager
+Package.resolved
+
+# Build outputs
+dist/

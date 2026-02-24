@@ -42,7 +42,7 @@ LOG_BACKUP_COUNT = 3  # Keep 3 rotated files (.log.1, .log.2, .log.3)
 logger = logging.getLogger("vibe-check")
 
 # Version
-VERSION = "1.1.17"
+VERSION = "1.2.0"
 
 # Default production API URL
 DEFAULT_API_URL = "https://vibecheck.wanderingstan.com/api"
@@ -508,6 +508,45 @@ class SQLiteManager:
             """
             )
 
+            # Create sync_scopes table — the sole source of truth for what gets synced.
+            # scope_type = 'all' means sync everything (replaces the old api.enabled flag).
+            # scope_type = 'session' means sync events for a specific session only.
+            # The remote server has no mechanism to add or modify rows here.
+            self.cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sync_scopes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    scope_type TEXT NOT NULL,
+                    scope_session_id TEXT,
+                    scope_git_remote_url TEXT,
+                    scope_file_name TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_synced_at DATETIME DEFAULT NULL
+                )
+            """
+            )
+            # Unique index using IFNULL to handle NULL columns correctly
+            self.cursor.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_scopes_unique ON sync_scopes(
+                    scope_type,
+                    IFNULL(scope_session_id, ''),
+                    IFNULL(scope_git_remote_url, ''),
+                    IFNULL(scope_file_name, '')
+                )
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_sync_scopes_session ON sync_scopes(scope_session_id)
+            """
+            )
+            self.cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_sync_scopes_type ON sync_scopes(scope_type)
+            """
+            )
+
             self.connection.commit()
 
     def export_schema_docs(self):
@@ -640,6 +679,31 @@ class SQLiteManager:
                 logger.info("Migrating schema: adding token tracking columns...")
                 self._recreate_table_with_new_schema()
                 logger.info("Schema migration complete: token columns added")
+
+            # Migrate from api.enabled config flag to sync_scopes table.
+            # Check if sync_scopes table was just created (no rows yet).
+            # If the old config had api.enabled=true, insert the 'all' scope.
+            self.cursor.execute(
+                """
+                SELECT COUNT(*) FROM sync_scopes WHERE scope_type = 'all'
+            """
+            )
+            has_all_scope = self.cursor.fetchone()[0] > 0
+            if not has_all_scope:
+                # Check config file for legacy api.enabled flag
+                config_path = Path.home() / ".vibe-check" / "config.json"
+                if not config_path.exists():
+                    config_path = Path("/opt/homebrew/var/vibe-check/config.json")
+                if config_path.exists():
+                    try:
+                        import json as _json
+                        with open(config_path) as _f:
+                            _cfg = _json.load(_f)
+                        if _cfg.get("api", {}).get("enabled", False):
+                            self.add_all_sync_scope()
+                            logger.info("Migrated api.enabled=true → sync_scopes 'all' row")
+                    except Exception as _e:
+                        logger.debug(f"Could not read config for migration: {_e}")
 
             # Check if FTS5 table exists and needs population
             self.cursor.execute(
@@ -1046,6 +1110,158 @@ class SQLiteManager:
             logger.error(f"SQLite error getting sync stats: {e}")
             return {"total_events": 0, "synced_events": 0, "pending_events": 0}
 
+    # -------------------------------------------------------------------------
+    # Sync scope operations
+    # The sync_scopes table is the sole source of truth for what gets synced.
+    # The remote server has no mechanism to add or modify rows here.
+    # -------------------------------------------------------------------------
+
+    def add_session_sync_scope(self, session_id: str) -> Optional[int]:
+        """Register a session for selective sync (idempotent).
+
+        Returns the row id of the scope (new or existing).
+        """
+        if not self.enabled:
+            return None
+        try:
+            with self._lock:
+                self.cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO sync_scopes
+                        (scope_type, scope_session_id, created_at)
+                    VALUES ('session', ?, CURRENT_TIMESTAMP)
+                """,
+                    (session_id,),
+                )
+                self.connection.commit()
+                # Return the row id (existing or new)
+                self.cursor.execute(
+                    "SELECT id FROM sync_scopes WHERE scope_type='session' AND scope_session_id=?",
+                    (session_id,),
+                )
+                row = self.cursor.fetchone()
+                return row[0] if row else None
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error adding session sync scope: {e}")
+            return None
+
+    def add_all_sync_scope(self) -> None:
+        """Enable global sync (scope_type='all'). Idempotent."""
+        if not self.enabled:
+            return
+        try:
+            with self._lock:
+                self.cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO sync_scopes
+                        (scope_type, created_at)
+                    VALUES ('all', CURRENT_TIMESTAMP)
+                """,
+                )
+                self.connection.commit()
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error adding all sync scope: {e}")
+
+    def remove_all_sync_scope(self) -> None:
+        """Disable global sync by removing the 'all' scope."""
+        if not self.enabled:
+            return
+        try:
+            with self._lock:
+                self.cursor.execute("DELETE FROM sync_scopes WHERE scope_type = 'all'")
+                self.connection.commit()
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error removing all sync scope: {e}")
+
+    def has_sync_all_scope(self) -> bool:
+        """Return True if global sync is enabled (scope_type='all' row exists)."""
+        if not self.enabled:
+            return False
+        try:
+            with self._lock:
+                self.cursor.execute(
+                    "SELECT COUNT(*) FROM sync_scopes WHERE scope_type = 'all'"
+                )
+                return self.cursor.fetchone()[0] > 0
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error checking all sync scope: {e}")
+            return False
+
+    def get_active_sync_scopes(self) -> list:
+        """Return all registered sync scopes."""
+        if not self.enabled:
+            return []
+        try:
+            with self._lock:
+                self.cursor.execute(
+                    "SELECT id, scope_type, scope_session_id, scope_git_remote_url, "
+                    "scope_file_name, created_at, last_synced_at FROM sync_scopes"
+                )
+                rows = self.cursor.fetchall()
+            return [
+                {
+                    "id": r[0],
+                    "scope_type": r[1],
+                    "scope_session_id": r[2],
+                    "scope_git_remote_url": r[3],
+                    "scope_file_name": r[4],
+                    "created_at": r[5],
+                    "last_synced_at": r[6],
+                }
+                for r in rows
+            ]
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error getting active sync scopes: {e}")
+            return []
+
+    def get_unsynced_events_for_session(self, session_id: str, limit: int = 200) -> list:
+        """Get unsynced events for a specific session."""
+        if not self.enabled:
+            return []
+        try:
+            with self._lock:
+                self.cursor.execute(
+                    """
+                    SELECT id, file_name, line_number, event_data,
+                           git_remote_url, git_commit_hash
+                    FROM conversation_events
+                    WHERE event_session_id = ?
+                      AND synced_at IS NULL
+                    ORDER BY id ASC
+                    LIMIT ?
+                """,
+                    (session_id, limit),
+                )
+                rows = self.cursor.fetchall()
+            return [
+                {
+                    "id": row[0],
+                    "file_name": row[1],
+                    "line_number": row[2],
+                    "event_data": json.loads(row[3]),
+                    "git_remote_url": row[4],
+                    "git_commit_hash": row[5],
+                }
+                for row in rows
+            ]
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error getting unsynced events for session: {e}")
+            return []
+
+    def mark_scope_synced(self, scope_id: int) -> None:
+        """Update last_synced_at for a scope after events have been uploaded."""
+        if not self.enabled:
+            return
+        try:
+            with self._lock:
+                self.cursor.execute(
+                    "UPDATE sync_scopes SET last_synced_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (scope_id,),
+                )
+                self.connection.commit()
+        except sqlite3.Error as e:
+            logger.error(f"SQLite error marking scope synced: {e}")
+
     def close(self):
         """Close SQLite connection."""
         with self._lock:
@@ -1408,36 +1624,117 @@ class ConversationMonitor(FileSystemEventHandler):
         return True, f"Last attempt {idle_minutes:.1f} minutes ago"
 
     def _sync_loop(self):
-        """Background loop that syncs pending events to the remote API."""
+        """Background loop that syncs pending events to the remote API.
+
+        Sync decisions are driven entirely by the local sync_scopes table:
+          - scope_type = 'all': sync all unsynced events (global sync)
+          - scope_type = 'session': sync events for a specific session only
+        The remote server has no mechanism to add or modify scopes.
+        """
         while self.sync_running:
             try:
-                if (
-                    self.api_enabled
-                    and self.sqlite_manager
-                    and self.sqlite_manager.enabled
-                ):
+                if not self.sqlite_manager or not self.sqlite_manager.enabled:
+                    time.sleep(60)
+                    continue
+
+                # Check credentials
+                if not self.api_url or not self.api_key:
+                    time.sleep(60)
+                    continue
+
+                # Determine sync mode from DB (sole source of truth)
+                has_all_scope = self.sqlite_manager.has_sync_all_scope()
+                active_scopes = self.sqlite_manager.get_active_sync_scopes()
+
+                if has_all_scope:
+                    # Global sync path (all unsynced events)
                     synced, had_events = self._sync_batch(batch_size=50)
                     if synced == 0:
                         if had_events:
-                            # Had events but failed to sync - use exponential backoff
                             sleep_time = self.sync_backoff_delay
                             logger.debug(f"Sync failed, backing off for {sleep_time:.1f}s")
                             time.sleep(sleep_time)
                         else:
-                            # No pending events, sleep longer
                             time.sleep(60)
                     else:
-                        # More to sync, short delay between batches
                         logger.info(f"Background sync: synced {synced} events")
                         time.sleep(2)
+
+                elif active_scopes:
+                    # Selective sync path (session and other scopes)
+                    synced = self._sync_scoped_batch(active_scopes)
+                    if synced > 0:
+                        logger.info(f"Selective sync: synced {synced} events")
+                        time.sleep(2)
+                    else:
+                        # Scopes exist but nothing pending — poll frequently
+                        time.sleep(5)
+
                 else:
-                    # API not enabled or SQLite not available, check periodically
+                    # No scopes, nothing to sync
                     time.sleep(60)
+
             except Exception as e:
                 logger.error(f"Error in sync worker: {e}")
-                # Back off on errors
                 self.sync_backoff_delay = min(self.sync_backoff_delay * 2, 300)
                 time.sleep(self.sync_backoff_delay)
+
+    def _sync_scoped_batch(self, scopes: list) -> int:
+        """Sync events for registered session (and other) scopes.
+
+        Args:
+            scopes: List of scope dicts from get_active_sync_scopes().
+
+        Returns:
+            Total number of events synced.
+        """
+        total_synced = 0
+
+        for scope in scopes:
+            scope_type = scope.get("scope_type")
+            if scope_type == "session":
+                session_id = scope.get("scope_session_id")
+                scope_id = scope.get("id")
+                if not session_id:
+                    continue
+
+                events = self.sqlite_manager.get_unsynced_events_for_session(
+                    session_id, limit=200
+                )
+                if not events:
+                    continue
+
+                synced = 0
+                for event in events:
+                    try:
+                        self.last_sync_attempt = time.time()
+                        redacted = self.redact_secrets_from_event(event["event_data"])
+                        response = self.session.post(
+                            f"{self.api_endpoint}/events",
+                            json={
+                                "file_name": event["file_name"],
+                                "line_number": event["line_number"],
+                                "event_data": redacted,
+                                "git_remote_url": event["git_remote_url"],
+                                "git_commit_hash": event["git_commit_hash"],
+                            },
+                            timeout=self.http_timeout,
+                        )
+                        response.raise_for_status()
+                        self.sqlite_manager.mark_event_synced(event["id"])
+                        synced += 1
+                        self.sync_backoff_delay = 0.1
+                        time.sleep(0.1)  # Throttle: 100ms between requests
+                    except Exception as e:
+                        logger.error(f"Error syncing event {event['id']}: {e}")
+                        break  # Stop this scope on error, try others
+
+                if synced > 0 and scope_id is not None:
+                    self.sqlite_manager.mark_scope_synced(scope_id)
+                total_synced += synced
+            # Other scope types (repository, conversation) can be added here in the future
+
+        return total_synced
 
     def _sync_batch(self, batch_size: int = 50) -> tuple[int, bool]:
         """Sync a batch of unsynced events to the remote API.

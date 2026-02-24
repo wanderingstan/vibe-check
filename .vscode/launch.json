@@ -13,6 +13,26 @@
       "env": {
         "PYTHONUNBUFFERED": "1"
       }
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:vibe-check-macos}",
+      "name": "Debug VibeCheck",
+      "target": "VibeCheck",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug VibeCheck"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:vibe-check-macos}",
+      "name": "Release VibeCheck",
+      "target": "VibeCheck",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release VibeCheck"
     }
   ]
 }

@@ -643,6 +643,153 @@ def vibe_session(session_id: Optional[str] = None) -> str:
         return f"Error getting session: {e}"
 
 
+DEFAULT_API_URL = "https://vibecheck.wanderingstan.com/api"
+
+
+def _load_vibe_config() -> Optional[dict]:
+    """Load vibe-check config.json from standard locations."""
+    config_path_env = os.environ.get("VIBE_CHECK_CONFIG")
+    candidates = (
+        [Path(config_path_env)] if config_path_env
+        else [
+            Path.home() / ".vibe-check" / "config.json",
+            Path("/opt/homebrew/var/vibe-check/config.json"),
+        ]
+    )
+    for path in candidates:
+        if path.exists():
+            try:
+                with open(path) as f:
+                    return json.load(f), path
+            except (json.JSONDecodeError, IOError):
+                continue
+    return None, None
+
+
+def _save_vibe_config(config: dict, config_path: Path) -> bool:
+    """Write config.json back to disk."""
+    try:
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+        return True
+    except IOError:
+        return False
+
+
+def _register_session_sync_scope(db_path: str, session_id: str) -> None:
+    """Write a session sync scope directly to the SQLite DB.
+
+    This tells the vibe-check daemon to sync events for this session even
+    when global sync (api.enabled) is off.
+    The local sync_scopes table is the sole source of truth — the remote
+    server has no mechanism to add or modify rows here.
+    """
+    import sqlite3 as _sqlite3
+    try:
+        conn = _sqlite3.connect(db_path, timeout=10)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO sync_scopes
+                (scope_type, scope_session_id, created_at)
+            VALUES ('session', ?, CURRENT_TIMESTAMP)
+            """,
+            (session_id,),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # Non-fatal: share creation will retry while waiting for sync
+
+
+def _device_flow_auth(api_url: str) -> tuple[Optional[str], str]:
+    """Perform device-flow authentication and return (api_key, error_message).
+
+    Opens the browser automatically. Blocks until the user approves or the
+    flow times out (typically 5 minutes).
+
+    Returns:
+        (api_key, "") on success
+        (None, error_message) on failure
+    """
+    import time as _time
+
+    base_url = api_url.rstrip("/")
+    if base_url.endswith("/api"):
+        base_url = base_url[:-4]
+
+    # Start device flow
+    try:
+        start_data = json.dumps({}).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base_url}/api/cli/auth/start",
+            data=start_data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "vibe-check-mcp/1.0",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            flow = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        return None, f"Failed to start authentication: {e}"
+
+    device_code = flow.get("device_code")
+    verification_url = flow.get("verification_url_complete") or flow.get("verification_url")
+    expires_in = flow.get("expires_in", 300)
+    interval = flow.get("interval", 5)
+
+    if not device_code or not verification_url:
+        return None, "Invalid authentication response from server."
+
+    # Open browser — user just needs to click Approve
+    try:
+        webbrowser.open(verification_url)
+    except Exception:
+        pass  # Non-fatal if browser fails to open
+
+    # Poll until approved or timed out
+    deadline = _time.time() + expires_in
+    while _time.time() < deadline:
+        _time.sleep(interval)
+        try:
+            poll_data = json.dumps({"device_code": device_code}).encode("utf-8")
+            poll_req = urllib.request.Request(
+                f"{base_url}/api/cli/auth/poll",
+                data=poll_data,
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "vibe-check-mcp/1.0",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(poll_req, timeout=10) as poll_resp:
+                status_code = poll_resp.status
+                poll_result = json.loads(poll_resp.read().decode("utf-8"))
+
+            if poll_result.get("status") == "approved":
+                api_key = poll_result.get("api_key")
+                if api_key:
+                    return api_key, ""
+            error = poll_result.get("error", "")
+            if error in ("expired_token", "token_already_used"):
+                return None, "Authorization code expired. Please try again."
+            if error == "denied":
+                return None, "Authorization was denied."
+            # Still pending — keep polling
+        except urllib.error.HTTPError as e:
+            if e.code == 202:
+                continue  # Still pending
+        except Exception:
+            continue  # Network hiccup, keep polling
+
+    return None, (
+        "Authorization timed out. Please run `vibe_share` again and approve "
+        "the login request in your browser within 5 minutes."
+    )
+
+
 @mcp.tool()
 def vibe_share(
     session_id: str,
@@ -653,6 +800,10 @@ def vibe_share(
     """
     Create a shareable link for a session.
 
+    Handles authentication automatically if not yet connected:
+    your browser will open so you can approve access.
+    The session will be synced to the server even if global sync is disabled.
+
     Args:
         session_id: The session ID to share
         title: Optional title for the share (default: auto-generated)
@@ -661,56 +812,47 @@ def vibe_share(
     """
     import time
 
-    # Find config file
-    config_path = os.environ.get("VIBE_CHECK_CONFIG")
-    if config_path:
-        config_paths = [Path(config_path)]
-    else:
-        config_paths = [
-            Path.home() / ".vibe-check" / "config.json",
-            Path("/opt/homebrew/var/vibe-check/config.json"),
-        ]
-
-    config = None
-    for path in config_paths:
-        if path.exists():
-            try:
-                with open(path) as f:
-                    config = json.load(f)
-                break
-            except (json.JSONDecodeError, IOError):
-                continue
-
-    if not config:
-        return (
-            "Could not find vibe-check configuration.\n\n"
-            "Sharing requires remote API to be configured.\n"
-            "Edit ~/.vibe-check/config.json and set api.enabled = true"
-        )
+    # STEP 1: Load config
+    config, config_path = _load_vibe_config()
+    if config is None:
+        config = {}
+        # Use default path even if it doesn't exist yet (we may write to it after auth)
+        config_path = Path.home() / ".vibe-check" / "config.json"
 
     api_config = config.get("api", {})
-
-    if not api_config.get("enabled", False):
-        return (
-            "Remote API is disabled in your configuration.\n\n"
-            "To enable sharing, edit ~/.vibe-check/config.json and set:\n"
-            '  "api": { "enabled": true, "url": "...", "api_key": "..." }'
-        )
-
-    api_url = api_config.get("url", "").rstrip("/")
+    api_url = (api_config.get("url") or DEFAULT_API_URL).rstrip("/")
     api_key = api_config.get("api_key", "")
 
-    if not api_url or not api_key:
-        return "API URL or API key missing in configuration."
+    # STEP 2: Authenticate if no API key
+    if not api_key:
+        new_api_key, err = _device_flow_auth(api_url)
+        if not new_api_key:
+            return f"## Authentication Required\n\n{err}"
 
-    # Create share via API
-    # Config URL may or may not include /api suffix
+        api_key = new_api_key
+        # Save api_key to config (does NOT enable global sync — user chose selective sharing)
+        if "api" not in config:
+            config["api"] = {}
+        config["api"]["api_key"] = api_key
+        config["api"].setdefault("url", api_url)
+        config["api"].setdefault("enabled", False)
+        _save_vibe_config(config, config_path)
+
+    # STEP 3: Register session in sync_scopes so the daemon uploads it
+    db_path_raw = config.get("sqlite", {}).get(
+        "database_path", "~/.vibe-check/vibe_check.db"
+    )
+    db_path = str(Path(db_path_raw).expanduser())
+    _register_session_sync_scope(db_path, session_id)
+    # The daemon reads sync_scopes every 5s and will begin uploading events
+
+    # STEP 4: Create share link (retry while waiting for daemon to sync)
     if api_url.endswith("/api"):
         share_endpoint = f"{api_url}/shares"
     else:
         share_endpoint = f"{api_url}/api/shares"
 
-    payload = {
+    payload: dict = {
         "scope_type": "session",
         "scope_session_id": session_id,
         "visibility": "public",
@@ -720,9 +862,10 @@ def vibe_share(
     if slug:
         payload["slug"] = slug
 
-    # Retry settings for sync delay
-    max_retries = 3 if wait_for_sync else 1
-    retry_delay = 3  # seconds between retries
+    # Extended retry window: daemon polls every 5s, upload takes a few seconds.
+    # 8 retries × 5s = up to 40s waiting for sync before giving up.
+    max_retries = 8 if wait_for_sync else 1
+    retry_delay = 5  # seconds
 
     for attempt in range(max_retries):
         try:
@@ -743,36 +886,45 @@ def vibe_share(
                 result = json.loads(response.read().decode("utf-8"))
 
             if result.get("status") == "ok" or result.get("share_url"):
+                base = api_url[:-4] if api_url.endswith("/api") else api_url
                 share_url = result.get(
-                    "share_url", f"{api_url}/s/{result.get('share_token', 'unknown')}"
+                    "share_url", f"{base}/s/{result.get('share_token', 'unknown')}"
                 )
-                output = "## Session Shared Successfully\n\n"
-                output += f"**Share URL**: {share_url}\n\n"
-                output += "Anyone with this link can view the session."
-                return output
-            else:
-                return f"Failed to create share: {result.get('error', result.get('message', 'Unknown error'))}"
+                return (
+                    "## Session Shared Successfully\n\n"
+                    f"**Share URL**: {share_url}\n\n"
+                    "Anyone with this link can view the session."
+                )
+            return f"Failed to create share: {result.get('error', result.get('message', 'Unknown error'))}"
 
         except urllib.error.HTTPError as e:
             body = ""
             try:
                 body = e.read().decode("utf-8")
-            except:
+            except Exception:
                 pass
 
-            # Check if it's a "not synced yet" error (403 with ownership message)
             if e.code == 403 and "do not own" in body and attempt < max_retries - 1:
-                # Session not synced yet, wait and retry
+                # Session not yet synced — wait for daemon
                 time.sleep(retry_delay)
                 continue
 
-            return f"API error: {e.code} {e.reason}\n{body}"
+            return f"API error {e.code}: {body}"
+
         except urllib.error.URLError as e:
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
             return f"Network error: {e.reason}"
+
         except Exception as e:
             return f"Error creating share: {e}"
 
-    return "Session not synced to server yet. The vibe-check daemon may need more time to upload. Try again in a few seconds."
+    return (
+        "Session syncing is in progress but taking longer than expected.\n"
+        "The vibe-check daemon is uploading your session data. "
+        "Please try again in 30 seconds."
+    )
 
 
 @mcp.tool()
