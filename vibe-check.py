@@ -4911,6 +4911,9 @@ Commands:
   git install   Install git hooks (global or current repo)
   git uninstall Remove git hooks
   git status    Show git hooks status
+  sync status   Show remote sync mode (global vs selective vs off)
+  sync enable   Sync all sessions automatically
+  sync disable  Stop auto-syncing (individual sessions can still be shared)
   (no command)  Show status if running, or prompt to start
 
 Examples:
@@ -4922,6 +4925,9 @@ Examples:
   vibe-check status             # Check status
   vibe-check logs               # View logs
   vibe-check doctor             # Get AI help troubleshooting
+  vibe-check sync status        # Show what's being synced
+  vibe-check sync enable        # Sync all sessions automatically
+  vibe-check sync disable       # Stop auto-syncing (keep sharing individual sessions)
   vibe-check --skip-backlog     # Run foreground, skip existing conversations
         """,
     )
