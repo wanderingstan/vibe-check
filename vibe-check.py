@@ -1917,13 +1917,14 @@ def register_mcp_in_claude_json(mcp_dir: Path):
         True if successful, False otherwise
     """
     claude_json = Path.home() / ".claude.json"
-    venv_python = mcp_dir / ".venv" / "bin" / "python"
-    server_py = mcp_dir / "server.py"
 
-    # Ensure files exist
-    if not venv_python.exists() or not server_py.exists():
-        logger.error(f"MCP server files not found: {venv_python} or {server_py}")
-        return False
+    # Find the vibe-check binary to use as the MCP entry point
+    homebrew_bin = Path("/opt/homebrew/bin/vibe-check")
+    if homebrew_bin.exists():
+        vibe_check_cmd = str(homebrew_bin)
+    else:
+        # Dev/non-Homebrew: use the current script
+        vibe_check_cmd = str(Path(__file__).resolve())
 
     # Create or update ~/.claude.json
     if claude_json.exists():
@@ -1940,15 +1941,11 @@ def register_mcp_in_claude_json(mcp_dir: Path):
     if "mcpServers" not in config:
         config["mcpServers"] = {}
 
-    # Add/update vibe-check MCP server
+    # Add/update vibe-check MCP server — single entry point, no venv path needed
     config["mcpServers"]["vibe-check"] = {
         "type": "stdio",
-        "command": str(venv_python),
-        "args": [str(server_py)],
-        "env": {
-            "VIBE_CHECK_DB": str(Path.home() / ".vibe-check" / "vibe_check.db"),
-            "VIBE_CHECK_CONFIG": str(Path.home() / ".vibe-check" / "config.json")
-        }
+        "command": vibe_check_cmd,
+        "args": ["--mcp-server"],
     }
 
     # Write back to file
@@ -4669,6 +4666,47 @@ def cmd_auth_logout(args):
     print("✅ Logged out. API key removed from config.")
 
 
+def cmd_mcp_server(args):
+    """Exec into the MCP server process. Used as the Claude Code MCP entry point.
+
+    Locates the installed server.py and its venv, then replaces the current
+    process via os.execve so Claude Code talks directly to the MCP server.
+    """
+    # Locate server.py — prefer user-installed copy over Homebrew share
+    candidates = [
+        Path.home() / ".vibe-check" / "mcp-server" / "server.py",
+        Path("/opt/homebrew/share/vibe-check/mcp-server/server.py"),
+        Path(__file__).parent / "mcp-server" / "server.py",
+    ]
+    server_py = next((p for p in candidates if p.exists()), None)
+    if not server_py:
+        print(
+            "Error: MCP server not found. Run 'vibe-check setup' to install it.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Prefer the dedicated MCP venv python; it has the 'mcp' package installed.
+    # Fall back to current python only in dev environments where mcp is available.
+    venv_python = server_py.parent / ".venv" / "bin" / "python"
+    if venv_python.exists():
+        python_exe = str(venv_python)
+    else:
+        python_exe = sys.executable
+
+    # Ensure standard env vars are set so server.py finds the right DB/config
+    env = os.environ.copy()
+    env.setdefault(
+        "VIBE_CHECK_DB", str(Path.home() / ".vibe-check" / "vibe_check.db")
+    )
+    env.setdefault(
+        "VIBE_CHECK_CONFIG", str(Path.home() / ".vibe-check" / "config.json")
+    )
+
+    # Replace this process with the MCP server
+    os.execve(python_exe, [python_exe, str(server_py)], env)
+
+
 def _open_sync_db():
     """Open the vibe-check SQLite DB for sync commands. Returns (conn, db_path) or (None, None)."""
     config_path = get_config_path()
@@ -4956,6 +4994,11 @@ Examples:
         action="store_true",
         help="Run monitor directly (skip interactive prompt, for services)",
     )
+    parser.add_argument(
+        "--mcp-server",
+        action="store_true",
+        help="Launch MCP server (used by Claude Code integration)",
+    )
 
     # Create subparsers
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
@@ -5144,6 +5187,9 @@ Examples:
     # If a subcommand was specified, run it
     if hasattr(args, "func"):
         args.func(args)
+    elif args.mcp_server:
+        # --mcp-server flag: exec into MCP server (Claude Code integration)
+        cmd_mcp_server(args)
     elif args.run:
         # --run flag: run monitor directly without prompting (for services)
         run_monitor(args)
