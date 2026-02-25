@@ -16,6 +16,7 @@ The vibe-check MCP server provides a `vibe_search` tool that handles all databas
 ### Tool: `mcp__vibe-check__vibe_search`
 
 **Parameters:**
+
 - `query` (required): Search term with FTS5 syntax support (see below)
 - `repo` (optional): Filter to specific repository name
 - `days` (optional): Limit to last N days
@@ -23,6 +24,7 @@ The vibe-check MCP server provides a `vibe_search` tool that handles all databas
 - `limit` (optional): Maximum results (default: 20)
 
 **FTS5 Query Syntax** (powerful full-text search with relevance ranking):
+
 - **Simple**: `authentication` - finds messages containing this word
 - **Phrase**: `"user authentication"` - exact phrase match
 - **Boolean**: `auth AND oauth` - both terms must be present
@@ -94,9 +96,9 @@ Claude: [Note: For "recent work" queries, use the vibe_recent tool instead]
 ### Example 4: Search Within Session
 
 ```
-User: "search for 'database' in session abc123"
+User: "search for 'database' in session 2d072129-d799-4aa5-b19d-5b5617f5a9de"
 
-Claude: [Calls mcp__vibe-check__vibe_search with query="database", session_id="abc123"]
+Claude: [Calls mcp__vibe-check__vibe_search with query="database", session_id="2d072129-d799-4aa5-b19d-5b5617f5a9de"]
 ```
 
 ### Example 5: Advanced FTS5 Phrase Search
