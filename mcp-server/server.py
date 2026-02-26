@@ -708,6 +708,24 @@ def _register_session_sync_scope(db_path: str, session_id: str) -> Optional[str]
         existing = {row[1] for row in conn.execute("PRAGMA table_info(sync_scopes)")}
         if "scope_git_remote_url" not in existing:
             conn.execute("ALTER TABLE sync_scopes ADD COLUMN scope_git_remote_url TEXT")
+        # De-duplicate before ensuring the unique index exists (repair for existing DBs)
+        conn.execute("""
+            DELETE FROM sync_scopes WHERE id NOT IN (
+                SELECT MIN(id) FROM sync_scopes
+                GROUP BY scope_type,
+                         IFNULL(scope_session_id, ''),
+                         IFNULL(scope_git_remote_url, ''),
+                         IFNULL(scope_file_name, '')
+            )
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_scopes_unique ON sync_scopes(
+                scope_type,
+                IFNULL(scope_session_id, ''),
+                IFNULL(scope_git_remote_url, ''),
+                IFNULL(scope_file_name, '')
+            )
+        """)
         conn.execute(
             """
             INSERT OR IGNORE INTO sync_scopes

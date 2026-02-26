@@ -28,7 +28,13 @@ Automatic detection and redaction of API keys, tokens, and credentials before da
 
 ## Installation
 
-### macOS Native App (Recommended)
+### macOS Native App (Experimental)
+
+> **⚠️ Experimental:** The native Swift macOS app is currently experimental and may have stability issues. Do **not** run it simultaneously with the Python/Homebrew version — they can conflict in multiple ways:
+> - **Database conflicts:** Both versions write to the same SQLite database, which can cause data corruption or missed events.
+> - **Competing MCP servers:** Both versions register an MCP server with Claude Code, and it is not guaranteed which one will respond to tool calls.
+>
+> If you are switching from the Python version, stop it first: `vibe-check stop` or `brew services stop vibe-check`.
 
 **VibeCheck 2.0** is a native Swift macOS app with menubar integration, faster performance, and lower memory usage.
 

@@ -1,3 +1,15 @@
+// ⚠️  EXPERIMENTAL — macOS Swift version
+//
+// This native Swift app is experimental. Do NOT run it at the same time as the
+// Python/Homebrew version of vibe-check. Running both simultaneously can cause:
+//   - Database conflicts: both versions write to the same SQLite file, risking
+//     data corruption or missed events.
+//   - Competing MCP servers: both versions register an MCP server with Claude
+//     Code, and it is not guaranteed which one will handle tool calls.
+//
+// Stop the Python daemon before launching this app:
+//   vibe-check stop   (or: brew services stop vibe-check)
+
 import AppKit
 import Foundation
 
