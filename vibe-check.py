@@ -4831,6 +4831,163 @@ def cmd_sync_disable(args):
         conn.close()
 
 
+def cmd_rescan(args):
+    """Rescan conversation files to recover any events missed by the local DB.
+
+    This is needed when vibe-check was started with --skip-backlog (or wasn't
+    running) while a conversation was active, causing the file position tracker
+    to skip over existing events.
+
+    Rescan reads JSONL files from the beginning and inserts any missing events
+    using INSERT OR IGNORE — already-captured events keep their synced_at value,
+    new events get synced_at=NULL and will be picked up by the sync worker.
+
+    NOTE: Sync scopes are NOT involved here. This only affects local SQLite
+    storage. All captured events go into the local DB regardless of scopes.
+    Scopes only control what gets uploaded to the remote server.
+    """
+    config_path = get_config_path()
+    if not config_path.exists():
+        print("⚠️  No config found. Run 'vibe-check setup' first.")
+        return
+
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    db_path = Path(
+        config.get("sqlite", {}).get("database_path", "~/.vibe-check/vibe_check.db")
+    ).expanduser()
+
+    if not db_path.exists():
+        print(f"⚠️  Database not found at {db_path}. Is vibe-check running?")
+        return
+
+    monitor_config = config.get("monitor", {})
+    conversation_dir = Path(
+        monitor_config.get("conversation_dir", "~/.claude/projects")
+    ).expanduser()
+
+    if not conversation_dir.exists():
+        print(f"⚠️  Conversation directory not found: {conversation_dir}")
+        return
+
+    session_id = getattr(args, "session_id", None)
+
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+
+    # Find target files
+    if session_id:
+        jsonl_files = sorted(conversation_dir.glob(f"**/{session_id}.jsonl"))
+        if not jsonl_files:
+            print(f"⚠️  No JSONL file found for session {session_id}")
+            conn.close()
+            return
+    else:
+        jsonl_files = sorted(conversation_dir.glob("**/*.jsonl"))
+
+    print(f"🔍 Rescanning {len(jsonl_files)} file(s) for missed events...")
+    print()
+
+    total_inserted = 0
+    user_name = os.environ.get("USER") or os.environ.get("LOGNAME") or "unknown"
+
+    for file_path in jsonl_files:
+        try:
+            relative_path = file_path.relative_to(conversation_dir)
+            filename = str(relative_path)
+        except ValueError:
+            filename = file_path.name
+
+        # Count events already in DB for this file
+        row = cur.execute(
+            "SELECT COUNT(*) FROM conversation_events WHERE file_name = ?",
+            (filename,),
+        ).fetchone()
+        db_count = row[0] if row else 0
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception as e:
+            print(f"  ⚠️  Error reading {filename}: {e}")
+            continue
+
+        total_lines = len(lines)
+        if db_count >= total_lines:
+            continue  # Nothing to recover for this file
+
+        print(f"  📄 {filename}")
+        print(f"     {total_lines} lines in file, {db_count} events in DB — rescanning...")
+
+        git_remote_url = None
+        git_commit_hash = None
+        git_info_fetched = False
+        file_inserted = 0
+
+        for idx, line in enumerate(lines):
+            line_number = idx + 1
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event_data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if not git_info_fetched:
+                cwd = event_data.get("cwd")
+                if cwd:
+                    git_remote_url, git_commit_hash = get_git_info(Path(cwd))
+                    git_info_fetched = True
+
+            cur.execute(
+                """INSERT OR IGNORE INTO conversation_events
+                   (file_name, line_number, event_data, user_name, git_remote_url, git_commit_hash)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    filename,
+                    line_number,
+                    json.dumps(event_data),
+                    user_name,
+                    git_remote_url,
+                    git_commit_hash,
+                ),
+            )
+            if cur.lastrowid:
+                file_inserted += 1
+
+        conn.commit()
+
+        # Update file state to current line count so monitor doesn't re-process these
+        cur.execute(
+            """INSERT INTO conversation_file_state (file_name, last_line, updated_at)
+               VALUES (?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(file_name) DO UPDATE SET
+                   last_line = MAX(last_line, excluded.last_line),
+                   updated_at = CURRENT_TIMESTAMP""",
+            (filename, total_lines),
+        )
+        conn.commit()
+
+        if file_inserted > 0:
+            print(f"     ✅ Recovered {file_inserted} missing events")
+        else:
+            print(f"     ✓  No missing events found")
+
+        total_inserted += file_inserted
+
+    conn.close()
+
+    print()
+    if total_inserted > 0:
+        print(f"✅ Rescan complete: {total_inserted} events recovered into local DB.")
+        print(f"   These will be uploaded based on your sync scope settings.")
+        print(f"   (Run 'vibe-check sync status' to check sync configuration)")
+    else:
+        print("✅ Rescan complete: local DB is already up to date.")
+
+
 def run_monitor(args):
     """Run the vibe-check process (extracted from main for daemon support)."""
     # Set up logging for console if not already configured (foreground mode)
@@ -5197,6 +5354,24 @@ Examples:
 
     # Default for 'sync' with no subcommand
     parser_sync.set_defaults(func=cmd_sync_status)
+
+    # vibe-check rescan [session_id]
+    parser_rescan = subparsers.add_parser(
+        "rescan",
+        help="Rescan conversation files to recover events missed by the local DB",
+        description=(
+            "Re-reads JSONL conversation files from the beginning and inserts any events "
+            "that the local DB missed (e.g. from --skip-backlog or vibe-check not running). "
+            "Already-captured events are untouched. New events will be synced to the remote "
+            "server according to your sync scope settings."
+        ),
+    )
+    parser_rescan.add_argument(
+        "session_id",
+        nargs="?",
+        help="Session ID to rescan (e.g. bb5a31ab-b820-4946-ada2-fe00deb65219). Omit to rescan all files.",
+    )
+    parser_rescan.set_defaults(func=cmd_rescan)
 
     # Parse arguments
     args = parser.parse_args()
