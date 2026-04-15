@@ -34,12 +34,16 @@ When user asks about recent work:
 2. **Call the MCP tool** with appropriate period
 
 3. **Present results** - the tool returns formatted output with:
-   - Session ID (shortened)
+   - Full session ID (UUID — never truncate when showing it to the user)
    - Repository and branch
+   - Working directory (`cwd`)
    - Duration in minutes
    - Activity counts (user/assistant messages)
    - Start time
    - First message preview
+   - **Resume command**: a ready-to-run `cd ... && claude --resume <full-uuid>` command
+
+   **Important:** Whenever you surface a session to the user, always include the full session UUID and the resume command verbatim from the tool output. Do not abbreviate the UUID to 8 chars — the user needs the full UUID to actually resume the session with `claude --resume`.
 
 4. **Offer follow-up actions**:
    - View full session details (use `vibe_session`)

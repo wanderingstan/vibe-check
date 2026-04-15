@@ -28,10 +28,27 @@ import os
 
 from database import execute_query, find_database_path
 
-MCP_SERVER_VERSION = "1.2.3"
+MCP_SERVER_VERSION = "1.2.4"
 
 # Create MCP server
 mcp = FastMCP("vibe-check")
+
+
+# =============================================================================
+# HELPERS
+# =============================================================================
+
+
+def _resume_command(session_id: Optional[str], cwd: Optional[str] = None) -> str:
+    """Format the CLI command to resume a session. Always uses the full UUID."""
+    if not session_id:
+        return ""
+    cmd = f"claude --resume {session_id}"
+    if cwd:
+        # Quote cwd if it contains spaces
+        quoted = f'"{cwd}"' if " " in cwd else cwd
+        return f"cd {quoted} && {cmd}"
+    return cmd
 
 
 # =============================================================================
@@ -241,6 +258,7 @@ def vibe_search(
                         ce.event_timestamp,
                         ce.git_remote_url,
                         ce.file_name,
+                        json_extract(ce.event_data, '$.cwd') as cwd,
                         fts.rank as relevance
                     FROM messages_fts fts
                     JOIN conversation_events ce ON ce.id = fts.rowid
@@ -292,7 +310,8 @@ def vibe_search(
                     SUBSTR(event_message, 1, 150) as message_preview,
                     event_timestamp,
                     git_remote_url,
-                    file_name
+                    file_name,
+                    json_extract(event_data, '$.cwd') as cwd
                 FROM conversation_events
                 WHERE {where_sql}
                     AND event_message IS NOT NULL
@@ -323,10 +342,13 @@ def vibe_search(
                     if r["git_remote_url"]
                     else "(no repo)"
                 )
-                session_short = (
-                    r["event_session_id"][:8] if r["event_session_id"] else "unknown"
-                )
-                output += f"\n### Session {session_short}... ({repo_name})\n"
+                full_sid = r["event_session_id"] or "unknown"
+                cwd = r["cwd"]
+                output += f"\n### Session {full_sid} ({repo_name})\n"
+                if cwd:
+                    output += f"- **cwd**: `{cwd}`\n"
+                if r["event_session_id"]:
+                    output += f"- **Resume**: `{_resume_command(full_sid, cwd)}`\n"
 
             msg_type = r["event_type"] or "unknown"
             preview = r["message_preview"] or ""
@@ -484,7 +506,8 @@ def vibe_recent(period: str = "today", limit: int = 10) -> str:
                     COUNT(CASE WHEN event_type = 'user' THEN 1 END) as user_messages,
                     COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,
                     git_remote_url,
-                    event_git_branch
+                    event_git_branch,
+                    MAX(json_extract(event_data, '$.cwd')) as cwd
                 FROM conversation_events
                 WHERE {date_filter}
                     AND event_session_id IS NOT NULL
@@ -499,7 +522,8 @@ def vibe_recent(period: str = "today", limit: int = 10) -> str:
                 assistant_messages,
                 event_count,
                 git_remote_url,
-                event_git_branch
+                event_git_branch,
+                cwd
             FROM session_summary
             ORDER BY session_start DESC
             LIMIT ?
@@ -533,9 +557,7 @@ def vibe_recent(period: str = "today", limit: int = 10) -> str:
         output += f"Found {len(sessions)} session(s):\n\n"
 
         for s in sessions:
-            session_short = (
-                s["event_session_id"][:8] if s["event_session_id"] else "unknown"
-            )
+            full_sid = s["event_session_id"] or "unknown"
             repo = (
                 s["git_remote_url"].split("/")[-1].replace(".git", "")
                 if s["git_remote_url"]
@@ -543,13 +565,18 @@ def vibe_recent(period: str = "today", limit: int = 10) -> str:
             )
             branch = s["event_git_branch"] or "unknown"
             duration = s["duration_minutes"] or 0
+            cwd = s["cwd"]
 
-            output += f"### Session {session_short}...\n"
+            output += f"### Session {full_sid}\n"
             output += f"- **Repository**: {repo}\n"
             output += f"- **Branch**: {branch}\n"
+            if cwd:
+                output += f"- **cwd**: `{cwd}`\n"
             output += f"- **Duration**: {duration:.0f} minutes\n"
             output += f"- **Activity**: {s['user_messages']} user, {s['assistant_messages']} assistant messages\n"
             output += f"- **Started**: {s['session_start']}\n"
+            if s["event_session_id"]:
+                output += f"- **Resume**: `{_resume_command(full_sid, cwd)}`\n"
 
             if s["event_session_id"] in first_messages:
                 msg = first_messages[s["event_session_id"]]
@@ -589,7 +616,8 @@ def vibe_session(session_id: Optional[str] = None) -> str:
                     COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,
                     git_remote_url,
                     event_git_branch,
-                    file_name
+                    file_name,
+                    MAX(json_extract(event_data, '$.cwd')) as cwd
                 FROM conversation_events
                 WHERE event_session_id = ?
                 GROUP BY event_session_id
@@ -609,7 +637,8 @@ def vibe_session(session_id: Optional[str] = None) -> str:
                     COUNT(CASE WHEN event_type = 'assistant' THEN 1 END) as assistant_messages,
                     git_remote_url,
                     event_git_branch,
-                    file_name
+                    file_name,
+                    MAX(json_extract(event_data, '$.cwd')) as cwd
                 FROM conversation_events
                 WHERE event_session_id IS NOT NULL
                 GROUP BY event_session_id
@@ -636,6 +665,10 @@ def vibe_session(session_id: Optional[str] = None) -> str:
             output += f"- **Repository**: {repo}\n"
         if s["event_git_branch"]:
             output += f"- **Branch**: {s['event_git_branch']}\n"
+        if s["cwd"]:
+            output += f"- **cwd**: `{s['cwd']}`\n"
+        if s["event_session_id"]:
+            output += f"- **Resume**: `{_resume_command(s['event_session_id'], s['cwd'])}`\n"
 
         return output
 

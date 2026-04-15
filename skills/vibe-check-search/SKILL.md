@@ -48,7 +48,7 @@ When user requests a search:
 
 2. **Call the MCP tool** with appropriate parameters
 
-3. **Present results** to user - the tool already formats them nicely
+3. **Present results** to user - the tool already formats them nicely. Session headers include the full session UUID, the working directory, and a ready-to-run resume command (`cd ... && claude --resume <full-uuid>`). When you surface a session to the user, preserve the **full UUID** and include the resume command verbatim — the user cannot restore a session from an 8-character prefix.
 
 4. **Offer follow-up actions**:
    - View full session (use `vibe_session` tool)
