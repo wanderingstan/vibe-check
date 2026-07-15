@@ -10,7 +10,7 @@
 Every message stored locally in SQLite. Query your conversation history with SQL. Full database access for power users.
 
 ### 🔍 MCP Introspection
-Eight MCP tools let Claude analyze its own conversation history. Ask "What did we talk about last week?" or "Show me sessions where we discussed agents."
+Eight MCP tools let Claude analyze its own conversation history. Ask "What did we talk about last week?" or "Show me sessions where we discussed dinosaurs."
 
 ### 🔗 Granular Sharing
 Share specific conversations, sessions, or repositories. Custom URLs, expiration dates, and access control. Multiple export formats.
